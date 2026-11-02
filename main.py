@@ -1,6 +1,8 @@
 # main.py
 import os
 import re
+import json
+import base64
 import datetime
 import logging
 from typing import List, Optional
@@ -32,6 +34,10 @@ TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 WIFE_TELEGRAM_ID = "9216839954"
 LATITUDE = os.environ.get("LATITUDE", "52.53")
 LONGITUDE = os.environ.get("LONGITUDE", "17.60")
+
+# Agent AI Gemini
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")
 
 app = FastAPI(title="Nexus Cloud Hub")
 
@@ -522,14 +528,242 @@ async def reply_telegram(chat_id: int | str, text: str) -> None:
         logger.error("Błąd wysyłki Telegram reply: %s", exc)
 
 
+async def download_telegram_file(file_id: str) -> tuple[bytes, str]:
+    """Pobiera zawartość pliku (zdjęcie, audio) bezpośrednio z Telegram API."""
+    if not TELEGRAM_BOT_TOKEN or not file_id:
+        return b"", ""
+    try:
+        async with httpx.AsyncClient(timeout=25.0) as client:
+            info_res = await client.get(
+                f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getFile",
+                params={"file_id": file_id}
+            )
+            data = info_res.json()
+            if not data.get("ok"):
+                return b"", ""
+            file_path = data["result"]["file_path"]
+            file_res = await client.get(f"https://api.telegram.org/file/bot{TELEGRAM_BOT_TOKEN}/{file_path}")
+            return file_res.content, file_path
+    except Exception as exc:
+        logger.error("Błąd pobierania pliku Telegram (%s): %s", file_id, exc)
+        return b"", ""
+
+
+async def run_gemini_agent(
+    user_prompt: str,
+    sender: str,
+    media_parts: Optional[list] = None
+) -> tuple[str, bool]:
+    """Wywołuje Agenta Gemini (gemini-3.5-flash) z kontekstem aktualnego stanu domu.
+    Wykonuje akcje na bazie Supabase (zakupy, kalendarz, odznaczanie kupionych).
+    Zwraca (odpowiedź_dla_użytkownika, czy_sukces).
+    """
+    if not GEMINI_API_KEY:
+        return "", False
+
+    today_str = str(datetime.date.today())
+    now_time = datetime.datetime.now().strftime("%H:%M")
+
+    # 1. Pobierz aktualny stan z Supabase
+    shopping_text = "Brak aktywnych pozycji (wszystko kupione)."
+    calendar_text = "Brak nadchodzących wydarzeń."
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            s_res = await client.get(f"{SUPABASE_URL}/rest/v1/home_shopping?is_bought=eq.false&order=id.asc", headers=supabase_headers())
+            if s_res.status_code == 200 and s_res.json():
+                items = s_res.json()
+                shopping_text = "\n".join([f"- {it.get('item')} ({it.get('quantity', '1')}) [ID: {it.get('id')}]" for it in items])
+
+            c_res = await client.get(f"{SUPABASE_URL}/rest/v1/home_calendar?event_date=gte.{today_str}&order=event_date.asc,event_time.asc&limit=25", headers=supabase_headers())
+            if c_res.status_code == 200 and c_res.json():
+                evs = c_res.json()
+                calendar_text = "\n".join([f"- {ev.get('event_date')} {ev.get('event_time', '')}: {ev.get('title')} [{ev.get('category')}] [ID: {ev.get('id')}]" for ev in evs])
+    except Exception as e:
+        logger.warning("Nie udało się pobrać pełnego kontekstu dla Gemini: %s", e)
+
+    system_prompt = f"""Jesteś osobistym, inteligentnym asystentem domowym Nexus Home Hub dla Bartosza i jego żony Darii.
+Dzisiejsza data: {today_str}. Aktualna godzina: {now_time}.
+Lokalizacja: Gniezno, Polska.
+
+AKTUALNY STAN TWOJEGO DOMU:
+[Lista zakupów - aktualnie potrzebne]:
+{shopping_text}
+
+[Kalendarz i harmonogram - nadchodzące dni]:
+{calendar_text}
+
+ZASADY DZIAŁANIA:
+1. Rozpoznawaj intencje użytkownika (zakupy, kalendarz, wywóz śmieci, skreślanie kupionych rzeczy, pytania kulinarne, domowe).
+2. Jeśli użytkownik dodaje zakupy, użyj 'add_shopping' z nazwami i ilościami (np. 2 mleka, 5 jajek).
+3. Jeśli użytkownik mówi, że coś kupił (np. 'kupiłem mleko', 'skreśl chleb'), użyj 'complete_shopping' z nazwami kupionych rzeczy.
+4. Jeśli użytkownik dodaje wydarzenie lub termin (np. dentysta, wizyta, urodziny, wywóz plastiku/bio), użyj 'add_calendar'.
+   - Kategoria musi być jedną z: 'Bartosz', 'Daria', 'Wspólne', 'Śmieci'.
+   - Jeśli to śmieci/odpady -> kategoria 'Śmieci'.
+   - Jeśli z kontekstu to sprawa żony -> 'Daria'. Jeśli męża -> 'Bartosz'. W przeciwnym razie -> 'Wspólne'.
+5. W polu 'reply' napisz naturalną, życzliwą, zwięzłą odpowiedź po polsku dla domownika (używaj emoji).
+"""
+
+    generation_config = {
+        "response_mime_type": "application/json",
+        "response_schema": {
+            "type": "OBJECT",
+            "properties": {
+                "actions": {
+                    "type": "ARRAY",
+                    "items": {
+                        "type": "OBJECT",
+                        "properties": {
+                            "action": {
+                                "type": "STRING",
+                                "enum": ["add_shopping", "complete_shopping", "add_calendar", "delete_calendar", "none"]
+                            },
+                            "shopping_items": {
+                                "type": "ARRAY",
+                                "items": {
+                                    "type": "OBJECT",
+                                    "properties": {
+                                        "item": {"type": "STRING"},
+                                        "quantity": {"type": "STRING"}
+                                    },
+                                    "required": ["item"]
+                                }
+                            },
+                            "complete_items": {
+                                "type": "ARRAY",
+                                "items": {"type": "STRING"}
+                            },
+                            "calendar_event": {
+                                "type": "OBJECT",
+                                "properties": {
+                                    "title": {"type": "STRING"},
+                                    "event_date": {"type": "STRING"},
+                                    "event_time": {"type": "STRING"},
+                                    "category": {"type": "STRING", "enum": ["Bartosz", "Daria", "Wspólne", "Śmieci"]}
+                                },
+                                "required": ["title", "event_date", "category"]
+                            },
+                            "delete_calendar_query": {"type": "STRING"}
+                        },
+                        "required": ["action"]
+                    }
+                },
+                "reply": {"type": "STRING"}
+            },
+            "required": ["actions", "reply"]
+        }
+    }
+
+    parts = []
+    if media_parts:
+        parts.extend(media_parts)
+    parts.append({"text": f"Nadawca: {sender}\nTreść: {user_prompt or 'Przeanalizuj przesłany załącznik'}"})
+
+    models_to_try = [GEMINI_MODEL, "gemini-3.1-flash-lite"]
+    payload = {
+        "system_instruction": {"parts": [{"text": system_prompt}]},
+        "contents": [{"role": "user", "parts": parts}],
+        "generation_config": generation_config
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=35.0) as client:
+            resp = None
+            for m in models_to_try:
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent?key={GEMINI_API_KEY}"
+                resp = await client.post(url, json=payload)
+                if resp.status_code == 200:
+                    break
+                logger.warning("Model %s zwrócił status %s, próbuję alternatywnego...", m, resp.status_code)
+
+            if not resp or resp.status_code != 200:
+                logger.error("Błąd odpowiedzi Gemini (%s): %s", resp.status_code if resp else "None", resp.text if resp else "")
+                return "", False
+
+            data = resp.json()
+            raw_json = data["candidates"][0]["content"]["parts"][0]["text"]
+            result = json.loads(raw_json)
+
+            actions = result.get("actions", [])
+            reply_text = result.get("reply", "Zrobione!")
+
+            refresh_shopping = False
+            refresh_calendar = False
+
+            for act in actions:
+                action_type = act.get("action")
+
+                if action_type == "add_shopping" and act.get("shopping_items"):
+                    for s_item in act["shopping_items"]:
+                        it_name = s_item.get("item", "").strip()
+                        it_qty = s_item.get("quantity", "1").strip() or "1"
+                        if it_name:
+                            await client.post(
+                                f"{SUPABASE_URL}/rest/v1/home_shopping",
+                                headers=supabase_headers(),
+                                json={"item": it_name, "quantity": it_qty, "category": "Wszystko", "added_by": f"AI: {sender}"}
+                            )
+                            refresh_shopping = True
+
+                elif action_type == "complete_shopping" and act.get("complete_items"):
+                    for c_name in act["complete_items"]:
+                        await client.patch(
+                            f"{SUPABASE_URL}/rest/v1/home_shopping?item=ilike.*{c_name.strip()}*&is_bought=eq.false",
+                            headers=supabase_headers(),
+                            json={"is_bought": True}
+                        )
+                        refresh_shopping = True
+
+                elif action_type == "add_calendar" and act.get("calendar_event"):
+                    ev = act["calendar_event"]
+                    await client.post(
+                        f"{SUPABASE_URL}/rest/v1/home_calendar",
+                        headers=supabase_headers(),
+                        json={
+                            "title": ev.get("title", "Wydarzenie"),
+                            "event_date": ev.get("event_date", today_str),
+                            "event_time": ev.get("event_time", ""),
+                            "category": ev.get("category", "Wspólne"),
+                            "created_by": f"AI: {sender}"
+                        }
+                    )
+                    refresh_calendar = True
+
+                elif action_type == "delete_calendar" and act.get("delete_calendar_query"):
+                    query = act["delete_calendar_query"].strip()
+                    await client.delete(
+                        f"{SUPABASE_URL}/rest/v1/home_calendar?title=ilike.*{query}*",
+                        headers=supabase_headers()
+                    )
+                    refresh_calendar = True
+
+            if refresh_shopping:
+                await ws_manager.broadcast_refresh("shopping")
+            if refresh_calendar:
+                await ws_manager.broadcast_refresh("calendar")
+
+            return reply_text, True
+
+    except Exception as exc:
+        logger.error("Błąd wykonania Agenta Gemini: %s", exc)
+        return "", False
+
+
 # --- TELEGRAM WEBHOOK ---
 @app.post("/api/webhook/telegram")
 async def telegram_webhook(update: dict):
     message = update.get("message", {})
-    text = message.get("text", "").strip()
     chat_id = message.get("chat", {}).get("id")
 
-    if not text or not chat_id:
+    if not chat_id:
+        return {"ok": True}
+
+    text = message.get("text", "").strip()
+    caption = message.get("caption", "").strip()
+    photo = message.get("photo")
+    voice = message.get("voice")
+
+    if not text and not photo and not voice:
         return {"ok": True}
 
     raw_sender = message.get("from", {})
@@ -542,29 +776,55 @@ async def telegram_webhook(update: dict):
     else:
         sender = "Bartosz"
 
-    logger.info("Odebrano Telegram od %s (user %s, chat %s): %s", sender, user_id_str, chat_id, text)
+    logger.info("Odebrano Telegram od %s (user %s, chat %s): text=%s, photo=%s, voice=%s", sender, user_id_str, chat_id, bool(text), bool(photo), bool(voice))
 
-    # /start lub pomoc
+    # 1. Obsługa zdjęć (Multimodal - lodówka, paragon, harmonogram śmieci z kartki)
+    if photo:
+        file_id = photo[-1]["file_id"]
+        content, _ = await download_telegram_file(file_id)
+        if content:
+            b64_img = base64.b64encode(content).decode("utf-8")
+            media_parts = [{"inline_data": {"mime_type": "image/jpeg", "data": b64_img}}]
+            prompt = caption or "Przeanalizuj to zdjęcie. Jeśli to lista zakupów lub paragon/lodówka - dodaj brakujące produkty. Jeśli to harmonogram śmieci - dodaj terminy do kalendarza."
+            reply, success = await run_gemini_agent(prompt, sender, media_parts)
+            if success and reply:
+                await reply_telegram(chat_id, reply)
+                return {"ok": True}
+
+    # 2. Obsługa notatek głosowych (Voice notes)
+    if voice:
+        file_id = voice["file_id"]
+        content, _ = await download_telegram_file(file_id)
+        if content:
+            b64_audio = base64.b64encode(content).decode("utf-8")
+            media_parts = [{"inline_data": {"mime_type": "audio/ogg", "data": b64_audio}}]
+            reply, success = await run_gemini_agent("Wiadomość głosowa. Wykonaj dyspozycje domownika.", sender, media_parts)
+            if success and reply:
+                await reply_telegram(chat_id, reply)
+                return {"ok": True}
+
+    # 3. Komendy systemowe / pomoc
     if text.lower() in ("/start", "/help", "/pomoc"):
         help_msg = (
-            f"👋 Cześć <b>{sender}</b>! Witaj w <b>Nexus Home Hub</b> 🏠\n\n"
+            f"👋 Cześć <b>{sender}</b>! Jestem <b>Agentem AI Nexus Home Hub (Gemini 3.5)</b> 🧠🏠\n\n"
+            "Możesz ze mną rozmawiać zupełnie swobodnie:\n\n"
             "🛒 <b>Zakupy:</b>\n"
-            "Napisz po prostu co kupić, np.:\n"
-            "• <code>2 mleka, 5 jajek, chleb</code>\n"
-            "• <code>masło, woda 6 butelek</code>\n\n"
+            "• <i>'Kup 2 mleka, 5 bułek i sok'</i>\n"
+            "• <i>'Dopisz składniki na pizzę dla 4 osób'</i>\n"
+            "• <i>'Kupiłem masło i chleb, skreśl je'</i>\n\n"
             "📅 <b>Kalendarz & Śmieci:</b>\n"
-            "• <code>/kalendarz jutro wywóz plastiku</code>\n"
-            "• <code>/kalendarz 15.11 dentysta 16:30 Daria</code>\n"
-            "• <code>/smieci 04.11 odpady bio</code>\n\n"
-            "📋 <b>Podgląd:</b>\n"
-            "• <code>/lista</code> - aktualne zakupy\n"
-            "• <code>/kalendarz</code> - nadchodzące wydarzenia\n\n"
+            "• <i>'Jutro o 16:30 dentysta dla Darii'</i>\n"
+            "• <i>'Wywóz plastiku w piątek'</i>\n"
+            "• <i>'Kiedy mamy najbliższy wywóz bio?'</i>\n\n"
+            "📸 <b>Zdjęcia & 🎙️ Głos:</b>\n"
+            "• Prześlij <b>zdjęcie lodówki</b> lub <b>harmonogramu śmieci</b> z kartki!\n"
+            "• Nagraj <b>notatkę głosową</b> w biegu lub z auta!\n\n"
             "Aplikacja: https://home-hub-sewt.onrender.com/"
         )
         await reply_telegram(chat_id, help_msg)
         return {"ok": True}
 
-    # /lista - sprawdzenie zakupów
+    # 4. Szybkie skróty podglądu (komendy natywne)
     if text.lower() in ("/lista", "lista", "/zakupy", "zakupy"):
         url = f"{SUPABASE_URL}/rest/v1/home_shopping?is_bought=eq.false&order=id.asc"
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -581,7 +841,6 @@ async def telegram_webhook(update: dict):
             await reply_telegram(chat_id, "\n".join(lines))
         return {"ok": True}
 
-    # /kalendarz (bez parametrów) - podgląd nadchodzących wydarzeń
     if text.lower() in ("/kalendarz", "kalendarz", "/terminy", "terminy", "/wydarzenia", "wydarzenia"):
         today_str = str(datetime.date.today())
         url = f"{SUPABASE_URL}/rest/v1/home_calendar?event_date=gte.{today_str}&order=event_date.asc,event_time.asc&limit=15"
@@ -601,7 +860,13 @@ async def telegram_webhook(update: dict):
             await reply_telegram(chat_id, "\n".join(lines))
         return {"ok": True}
 
-    # Dodawanie do kalendarza (/kalendarz ..., /termin ..., /smieci ...)
+    # 5. GŁÓWNY SILNIK: AGENT AI GEMINI 3.5 FLASH
+    reply, success = await run_gemini_agent(text, sender)
+    if success and reply:
+        await reply_telegram(chat_id, reply)
+        return {"ok": True}
+
+    # 6. AWARYJNY FALLBACK (gdyby Gemini nie odpowiedział)
     is_calendar_add = any(text.lower().startswith(p) for p in [
         "/kalendarz ", "kalendarz ", "/termin ", "termin ", "/smieci ", "smieci ",
         "/śmieci ", "śmieci ", "/wydarzenie ", "wydarzenie "
@@ -627,28 +892,24 @@ async def telegram_webhook(update: dict):
         )
         return {"ok": True}
 
-    # Obsługa dodawania zakupów (z komendą /kup, kup lub wprost, np. "2 jajka 3 mleka 5 bułek i sok")
     parsed_items = split_and_parse_shopping(text)
-    if not parsed_items:
-        return {"ok": True}
+    if parsed_items:
+        url = f"{SUPABASE_URL}/rest/v1/home_shopping"
+        added_summary = []
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            for item_name, qty in parsed_items:
+                if not item_name:
+                    continue
+                added_summary.append(f"{item_name} ({qty})" if qty != "1" else item_name)
+                await client.post(
+                    url,
+                    headers=supabase_headers(),
+                    json={"item": item_name, "quantity": qty, "category": "Wszystko", "added_by": f"TG: {sender}"}
+                )
+        if added_summary:
+            await ws_manager.broadcast_refresh("shopping")
+            await reply_telegram(chat_id, f"✅ Dodano do listy ({sender}):\n• <b>" + "\n• ".join(added_summary) + "</b>")
 
-    url = f"{SUPABASE_URL}/rest/v1/home_shopping"
-    added_summary = []
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        for item_name, qty in parsed_items:
-            if not item_name:
-                continue
-
-            added_summary.append(f"{item_name} ({qty})" if qty != "1" else item_name)
-            await client.post(
-                url,
-                headers=supabase_headers(),
-                json={"item": item_name, "quantity": qty, "category": "Wszystko", "added_by": f"TG: {sender}"}
-            )
-
-    if added_summary:
-        await ws_manager.broadcast_refresh("shopping")
-        await reply_telegram(chat_id, f"✅ Dodano do wspólnej listy ({sender}):\n• <b>" + "\n• ".join(added_summary) + "</b>")
     return {"ok": True}
 
 
