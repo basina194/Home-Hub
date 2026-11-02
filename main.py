@@ -3,9 +3,11 @@ import os
 import re
 import json
 import base64
+import asyncio
 import datetime
 import logging
 from typing import List, Optional
+from contextlib import asynccontextmanager
 
 import httpx
 from dotenv import load_dotenv
@@ -39,19 +41,18 @@ LONGITUDE = os.environ.get("LONGITUDE", "17.60")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")
 
-app = FastAPI(title="Nexus Cloud Hub")
 
-# CORS Middleware (obsługa localhost, 127.0.0.1, LiveServer i urządzeń w sieci)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-os.makedirs("static", exist_ok=True)
-app.mount("/static", StaticFiles(directory="static"), name="static")
+def get_poland_time() -> datetime.datetime:
+    """Zwraca aktualny czas w Polsce z poprawnym uwzględnieniem czasu letniego (CEST) i zimowego (CET)."""
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
+    year = now_utc.year
+    d_mar = datetime.date(year, 3, 31)
+    dst_start = d_mar - datetime.timedelta(days=(d_mar.weekday() + 1) % 7)
+    d_oct = datetime.date(year, 10, 31)
+    dst_end = d_oct - datetime.timedelta(days=(d_oct.weekday() + 1) % 7)
+    today = now_utc.date()
+    offset = 2 if (dst_start <= today < dst_end) else 1
+    return now_utc.astimezone(datetime.timezone(datetime.timedelta(hours=offset)))
 
 
 def verify_pin(x_app_pin: Optional[str] = Header(None)) -> None:
@@ -94,21 +95,185 @@ ws_manager = ConnectionManager()
 
 
 async def send_telegram_alert(message: str) -> None:
+    """Wysyła alert/powiadomienie na Telegramie do wszystkich zarejestrowanych domowników (Bartosz i Daria)."""
     if not TELEGRAM_BOT_TOKEN:
         return
     targets = set()
     if TELEGRAM_CHAT_ID:
-        targets.add(TELEGRAM_CHAT_ID)
+        targets.add(str(TELEGRAM_CHAT_ID))
     if WIFE_TELEGRAM_ID:
-        targets.add(WIFE_TELEGRAM_ID)
+        targets.add(str(WIFE_TELEGRAM_ID))
+
+    # Pobierz dynamicznie zarejestrowanych subskrybentów (np. czat Bartosza po pierwszym kontakcie)
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(f"{SUPABASE_URL}/rest/v1/telegram_subscribers?select=chat_id", headers=supabase_headers())
+            if resp.status_code == 200:
+                for row in resp.json():
+                    cid = str(row.get("chat_id", "")).strip()
+                    if cid:
+                        targets.add(cid)
+    except Exception as exc:
+        logger.warning("Błąd odczytu telegram_subscribers: %s", exc)
 
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    async with httpx.AsyncClient(timeout=6.0) as client:
+    async with httpx.AsyncClient(timeout=8.0) as client:
         for tid in targets:
             try:
                 await client.post(url, json={"chat_id": tid, "text": message, "parse_mode": "HTML"})
             except Exception as exc:
                 logger.error("Błąd wysyłki Telegram do %s: %s", tid, exc)
+
+
+async def check_and_send_calendar_reminders():
+    """Sprawdza reguły powiadomień:
+    - Dla śmieci: 1 dzień przed oraz w dniu wywozu rano (od godz. 6:00)
+    - Dla pozostałych wydarzeń: 7 dni przed, 1 dzień przed oraz na 1h przed wydarzeniem (o ile podano godzinę)
+    """
+    if not SUPABASE_URL or not SUPABASE_KEY or not TELEGRAM_BOT_TOKEN:
+        return
+
+    now = get_poland_time()
+    today = now.date()
+    # Sprawdzamy okno od dziś do 8 dni do przodu
+    url = f"{SUPABASE_URL}/rest/v1/home_calendar?event_date=gte.{today}&event_date=lte.{today + datetime.timedelta(days=8)}&order=event_date.asc"
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(url, headers=supabase_headers())
+            if resp.status_code != 200:
+                return
+            events = resp.json()
+            if not isinstance(events, list):
+                return
+
+            cat_icons = {"Bartosz": "🧔", "Daria": "🌸", "Wspólne": "🏡", "Śmieci": "🗑️"}
+
+            for ev in events:
+                ev_id = ev.get("id")
+                title = ev.get("title", "Wydarzenie")
+                category = ev.get("category", "Wspólne")
+                is_waste = (category == "Śmieci")
+                notified = set(ev.get("notified_milestones") or [])
+                new_milestones = set()
+
+                try:
+                    ev_date = datetime.date.fromisoformat(ev.get("event_date", str(today)))
+                except Exception:
+                    continue
+
+                days_until = (ev_date - today).days
+                ev_time = str(ev.get("event_time") or "").strip()
+                icon = cat_icons.get(category, "📌")
+
+                # --- 1. REGUŁY DLA ŚMIECI ---
+                if is_waste:
+                    # 1 dzień przed
+                    if days_until == 1 and "smieci_1d_before" not in notified:
+                        msg = (
+                            f"🗑️ <b>PRZYPOMNIENIE: WYWÓZ ŚMIECI JUTRO!</b>\n\n"
+                            f"• Frakcja: <b>{title}</b>\n"
+                            f"• Data odbioru: <b>{ev_date}</b>\n\n"
+                            f"👉 <i>Pamiętajcie o wystawieniu odpowiedniego kubła lub worków przed posesję!</i>"
+                        )
+                        await send_telegram_alert(msg)
+                        new_milestones.add("smieci_1d_before")
+
+                    # W dniu wydarzenia rano (od godz. 6:00)
+                    elif days_until == 0 and "smieci_day_of" not in notified and now.hour >= 6:
+                        msg = (
+                            f"🚨 <b>WYWÓZ ŚMIECI DZISIAJ RANO!</b>\n\n"
+                            f"• Frakcja: <b>{title}</b>\n\n"
+                            f"👉 <i>Upewnijcie się, że odpady są wystawione przy drodze przed przyjazdem śmieciarki!</i>"
+                        )
+                        await send_telegram_alert(msg)
+                        new_milestones.add("smieci_day_of")
+
+                # --- 2. REGUŁY DLA POZOSTAŁYCH WYDARZEŃ ---
+                else:
+                    time_info = f" o godz. <b>{ev_time}</b>" if ev_time else ""
+
+                    # 7 dni przed
+                    if days_until == 7 and "7d_before" not in notified:
+                        msg = (
+                            f"📅 <b>Przypomnienie (za 7 dni):</b>\n"
+                            f"• {icon} <b>{title}</b> <i>[{category}]</i>\n"
+                            f"• Termin: <b>{ev_date}</b>{time_info}"
+                        )
+                        await send_telegram_alert(msg)
+                        new_milestones.add("7d_before")
+
+                    # 1 dzień przed
+                    if days_until == 1 and "1d_before" not in notified:
+                        msg = (
+                            f"⏰ <b>Przypomnienie na JUTRO:</b>\n"
+                            f"• {icon} <b>{title}</b> <i>[{category}]</i>\n"
+                            f"• Termin: <b>{ev_date}</b>{time_info}"
+                        )
+                        await send_telegram_alert(msg)
+                        new_milestones.add("1d_before")
+
+                    # 1h przed wydarzeniem (o ile podano godzinę)
+                    if days_until == 0 and ev_time and "1h_before" not in notified:
+                        m_time = re.match(r"^(\d{1,2}):(\d{2})$", ev_time)
+                        if m_time:
+                            h = int(m_time.group(1))
+                            m = int(m_time.group(2))
+                            ev_dt = datetime.datetime.combine(ev_date, datetime.time(h, m)).replace(tzinfo=now.tzinfo)
+                            diff_minutes = (ev_dt - now).total_seconds() / 60
+                            if 0 <= diff_minutes <= 65:
+                                msg = (
+                                    f"🔔 <b>PRZYPOMNIENIE (ZA GODZINĘ):</b>\n"
+                                    f"• {icon} <b>{title}</b> <i>[{category}]</i>\n"
+                                    f"• Godzina rozpoczęcia: <b>{ev_time}</b>!"
+                                )
+                                await send_telegram_alert(msg)
+                                new_milestones.add("1h_before")
+
+                # Zapisujemy odhaczone powiadomienia w Supabase
+                if new_milestones:
+                    updated_milestones = list(notified.union(new_milestones))
+                    await client.patch(
+                        f"{SUPABASE_URL}/rest/v1/home_calendar?id=eq.{ev_id}",
+                        headers=supabase_headers(),
+                        json={"notified_milestones": updated_milestones}
+                    )
+    except Exception as exc:
+        logger.error("Błąd podczas sprawdzania przypomnień kalendarza: %s", exc)
+
+
+async def calendar_reminder_loop():
+    """Cykliczna pętla sprawdzająca przypomnienia co 60 sekund."""
+    logger.info("Uruchomiono pętlę automatycznych przypomnień kalendarza (Telegram).")
+    while True:
+        try:
+            await check_and_send_calendar_reminders()
+        except Exception as exc:
+            logger.error("Błąd w pętli przypomnień: %s", exc)
+        await asyncio.sleep(60)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Start tła dla przypomnień
+    reminder_task = asyncio.create_task(calendar_reminder_loop())
+    yield
+    reminder_task.cancel()
+
+
+app = FastAPI(title="Nexus Cloud Hub", lifespan=lifespan)
+
+# CORS Middleware (obsługa localhost, 127.0.0.1, LiveServer i urządzeń w sieci)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+os.makedirs("static", exist_ok=True)
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
 class CalendarEventCreate(BaseModel):
@@ -272,6 +437,13 @@ async def delete_calendar_event(event_id: int):
         resp.raise_for_status()
     await ws_manager.broadcast_refresh("calendar")
     return {"status": "ok"}
+
+
+@app.post("/api/home/reminders/trigger", dependencies=[Depends(verify_pin)])
+async def trigger_reminders_manually():
+    """Ręczne sprawdzenie i wysyłka przypomnień kalendarza."""
+    await check_and_send_calendar_reminders()
+    return {"status": "ok", "message": "Pomyślnie sprawdzono przypomnienia"}
 
 
 # --- MODUŁ FIRMA (SUPABASE) ---
@@ -775,6 +947,17 @@ async def telegram_webhook(update: dict):
         sender = "Daria"
     else:
         sender = "Bartosz"
+
+    # Automatyczna rejestracja subskrybenta powiadomień w Supabase
+    try:
+        async with httpx.AsyncClient(timeout=4.0) as client:
+            await client.post(
+                f"{SUPABASE_URL}/rest/v1/telegram_subscribers",
+                headers=supabase_headers(),
+                json={"chat_id": chat_id_str, "name": sender}
+            )
+    except Exception:
+        pass
 
     logger.info("Odebrano Telegram od %s (user %s, chat %s): text=%s, photo=%s, voice=%s", sender, user_id_str, chat_id, bool(text), bool(photo), bool(voice))
 
