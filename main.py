@@ -322,6 +322,42 @@ async def get_ha_states():
         return [s for s in resp.json() if s.get("entity_id", "").startswith(allowed)][:10]
 
 
+# Słownik polskich liczebników głównych
+POLISH_NUM_WORDS = {
+    'jeden': '1', 'jedna': '1', 'jedno': '1',
+    'dwa': '2', 'dwie': '2', 'dwoje': '2',
+    'trzy': '3', 'troje': '3',
+    'cztery': '4', 'czworo': '4',
+    'pięć': '5', 'piec': '5',
+    'sześć': '6', 'szesc': '6',
+    'siedem': '7',
+    'osiem': '8',
+    'dziewięć': '9', 'dziewiec': '9',
+    'dziesięć': '10', 'dziesiec': '10',
+    'jedenaście': '11', 'jedenascie': '11',
+    'dwanaście': '12', 'dwanascie': '12',
+    'trzynaście': '13', 'trzynascie': '13',
+    'czternaście': '14', 'czternascie': '14',
+    'piętnaście': '15', 'pietnascie': '15',
+    'szesnaście': '16', 'szesnascie': '16',
+    'siedemnaście': '17', 'siedemnascie': '17',
+    'osiemnaście': '18', 'osiemnascie': '18',
+    'dziewiętnaście': '19', 'dziewietnascie': '19',
+    'dwadzieścia': '20', 'dwadziescia': '20',
+    'trzydzieści': '30', 'trzydziesci': '30',
+    'czterdzieści': '40', 'czterdziesci': '40',
+    'pięćdziesiąt': '50', 'piecdziesiat': '50',
+    'pół': '0.5', 'pol': '0.5',
+}
+
+KNOWN_SHOPPING_UNITS = [
+    'x', 'szt', 'sztuk', 'sztuki', 'sztukę', 'sztuke', 'op', 'opak', 'opakowanie', 'opakowania', 'opakowań', 'opakowan',
+    'kg', 'g', 'dag', 'l', 'litr', 'litry', 'litrow', 'litrów', 'butelka', 'butelki', 'butelek',
+    'puszka', 'puszki', 'puszek', 'karton', 'kartony', 'kartonów', 'kartonow', 'zgrzewka', 'zgrzewki', 'zgrzewek',
+    'pęczek', 'peczek', 'pęczki', 'bochenek', 'bochenki'
+]
+
+
 def parse_polish_item(raw: str) -> tuple[str, str]:
     """Inteligentne rozpoznawanie ilości i nazwy w języku polskim:
     - '2 mleka' -> ('mleka', '2')
@@ -342,12 +378,7 @@ def parse_polish_item(raw: str) -> tuple[str, str]:
         parts = raw.split(" - ", 1)
         return parts[0].strip(), parts[1].strip()
 
-    known_units = {
-        'x', 'szt', 'sztuk', 'sztuki', 'op', 'opak', 'opakowanie', 'opakowania', 'opakowań',
-        'kg', 'g', 'dag', 'l', 'litr', 'litry', 'litrow', 'litrów', 'butelka', 'butelki', 'butelek',
-        'puszka', 'puszki', 'puszek', 'karton', 'kartony', 'kartonów', 'zgrzewka', 'zgrzewki', 'zgrzewek',
-        'pęczek', 'peczek', 'pęczki', 'bochenek', 'bochenki'
-    }
+    known_units = set(KNOWN_SHOPPING_UNITS)
 
     # 2. Liczba na początku: '2 mleka', '2x chleb', '2 kg ziemniaków', '1.5l wody'
     m_start = re.match(r'^(\d+(?:[.,]\d+)?)\s*([a-zA-ZąćęłńóśźżĄĆĘŁŃÓŚŹŻ]{1,10})?\s+(.+)$', raw)
@@ -373,6 +404,48 @@ def parse_polish_item(raw: str) -> tuple[str, str]:
             return item, num
 
     return raw, "1"
+
+
+def split_and_parse_shopping(raw_text: str) -> list[tuple[str, str]]:
+    """Rozbija tekst zakupów na poszczególne produkty z ilościami, nawet gdy nie ma przecinków
+    (np. '2 jajka 3 mleka 5 bułek i sok' -> [('jajka', '2'), ('mleka', '3'), ('bułek', '5'), ('sok', '1')])
+    oraz zamienia liczebniki słowne ('trzy mleka i chleb' -> [('mleka', '3'), ('chleb', '1')]).
+    """
+    cleaned = raw_text.strip()
+    for prefix in ['/kup ', 'kup ', '/dodaj ', 'dodaj ']:
+        if cleaned.lower().startswith(prefix):
+            cleaned = cleaned[len(prefix):].strip()
+            break
+
+    # 1. Zamiana słownych liczebników na cyfry
+    for word, num in POLISH_NUM_WORDS.items():
+        cleaned = re.sub(rf'\b{word}\b', num, cleaned, flags=re.I)
+
+    # 2. Zamiana spójników na przecinek
+    cleaned = re.sub(r'\s+(?:i|oraz|\+|a także|a takze)\s+', ', ', cleaned, flags=re.I)
+
+    # 3. Wstaw przecinek przed liczbą, która zaczyna kolejną pozycję
+    unit_pattern = '|'.join(KNOWN_SHOPPING_UNITS)
+    cleaned = re.sub(
+        rf'([^\W\d_]+)\s+(?=\d+(?:[.,]\d+)?\s+(?!{unit_pattern}\b)[^\W\d_]+)',
+        r'\1, ',
+        cleaned,
+        flags=re.I
+    )
+    cleaned = re.sub(
+        rf'([^\W\d_]+)\s+(?=\d+(?:[.,]\d+)?\s+(?:{unit_pattern})\s+[^\W\d_]+)',
+        r'\1, ',
+        cleaned,
+        flags=re.I
+    )
+
+    chunks = [c.strip() for c in re.split(r'[,;\n]+', cleaned) if c.strip()]
+    results = []
+    for chunk in chunks:
+        item_name, qty = parse_polish_item(chunk)
+        if item_name:
+            results.append((item_name, qty))
+    return results
 
 
 def parse_calendar_input(text: str, default_user: str = "Bartosz") -> tuple[str, str, str, str]:
@@ -554,23 +627,15 @@ async def telegram_webhook(update: dict):
         )
         return {"ok": True}
 
-    # Obsługa komend: /kup ..., kup ..., lub po prostu listy zakupów wpisanej wprost (np. "2 mleka, 5 jajek")
-    clean_text = text
-    if clean_text.lower().startswith("/kup "):
-        clean_text = clean_text[5:].strip()
-    elif clean_text.lower().startswith("kup "):
-        clean_text = clean_text[4:].strip()
-
-    # Dzielenie po przecinkach, średnikach lub nowych liniach:
-    items_raw = [i.strip() for i in re.split(r'[,;\n]+', clean_text) if i.strip()]
-    if not items_raw:
+    # Obsługa dodawania zakupów (z komendą /kup, kup lub wprost, np. "2 jajka 3 mleka 5 bułek i sok")
+    parsed_items = split_and_parse_shopping(text)
+    if not parsed_items:
         return {"ok": True}
 
     url = f"{SUPABASE_URL}/rest/v1/home_shopping"
     added_summary = []
     async with httpx.AsyncClient(timeout=10.0) as client:
-        for raw in items_raw:
-            item_name, qty = parse_polish_item(raw)
+        for item_name, qty in parsed_items:
             if not item_name:
                 continue
 
