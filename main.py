@@ -37,8 +37,8 @@ TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "9062746866:AAE4nnHqbN
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 WIFE_TELEGRAM_ID = "9216839954"
 BARTOSZ_TELEGRAM_ID = "7939517140"
-LATITUDE = os.environ.get("LATITUDE", "52.53")
-LONGITUDE = os.environ.get("LONGITUDE", "17.60")
+LATITUDE = os.environ.get("LATITUDE", "52.7676")
+LONGITUDE = os.environ.get("LONGITUDE", "17.7558")
 
 # Agent AI Gemini
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
@@ -404,10 +404,10 @@ async def get_weather():
         f"&current=temperature_2m,wind_speed_10m"
         f"&daily=precipitation_probability_max&timezone=Europe%2FWarsaw&forecast_days=1"
     )
-    async with httpx.AsyncClient(timeout=5.0) as client:
-        resp = await client.get(url)
-        resp.raise_for_status()
-        return resp.json()
+    client = get_http_client()
+    resp = await client.get(url)
+    resp.raise_for_status()
+    return resp.json()
 
 
 # --- LISTA ZAKUPÓW (SUPABASE) ---
@@ -1059,7 +1059,7 @@ async def run_gemini_agent(
         logger.warning("Błąd szybkiego odczytu kontekstu: %s", e)
 
     # Zoptymalizowany, ultra-zwięzły prompt (zmniejsza zużycie tokenów o ponad 60%)
-    system_prompt = f"""Asystent domowy Nexus dla Bartosza i Darii (Gniezno). Dziś: {today_str} {now_time}.
+    system_prompt = f"""Asystent domowy Nexus dla Bartosza i Darii (Gąsawa, 88-410). Dziś: {today_str} {now_time}.
 Aktywne zakupy: {shopping_text}.
 Nadchodzący kalendarz: {calendar_text}.
 Instrukcje:
