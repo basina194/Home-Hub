@@ -1,5 +1,6 @@
 # main.py
 import os
+import re
 import logging
 from typing import List, Optional
 
@@ -123,7 +124,14 @@ class HAToggleRequest(BaseModel):
 
 @app.get("/")
 async def serve_pwa():
-    return FileResponse("static/index.html")
+    return FileResponse(
+        "static/index.html",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0"
+        }
+    )
 
 
 @app.get("/manifest.json")
@@ -133,7 +141,15 @@ async def serve_manifest():
 
 @app.get("/sw.js")
 async def serve_sw():
-    return FileResponse("static/sw.js", media_type="application/javascript")
+    return FileResponse(
+        "static/sw.js",
+        media_type="application/javascript",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0"
+        }
+    )
 
 
 @app.websocket("/ws")
@@ -267,6 +283,59 @@ async def get_ha_states():
         return [s for s in resp.json() if s.get("entity_id", "").startswith(allowed)][:10]
 
 
+def parse_polish_item(raw: str) -> tuple[str, str]:
+    """Inteligentne rozpoznawanie ilości i nazwy w języku polskim:
+    - '2 mleka' -> ('mleka', '2')
+    - '5 jajek' -> ('jajek', '5')
+    - 'jajka 10' -> ('jajka', '10')
+    - 'chleb 2' -> ('chleb', '2')
+    - '2x chleb' -> ('chleb', '2 szt.')
+    - '1.5 kg mąki' -> ('mąki', '1.5 kg')
+    - 'woda 6 butelek' -> ('woda', '6 butelek')
+    - 'mleko - 2 opakowania' -> ('mleko', '2 opakowania')
+    """
+    raw = raw.strip()
+    if not raw:
+        return "", "1"
+
+    # 1. Sprawdź myślnik: 'towar - ilość'
+    if " - " in raw:
+        parts = raw.split(" - ", 1)
+        return parts[0].strip(), parts[1].strip()
+
+    known_units = {
+        'x', 'szt', 'sztuk', 'sztuki', 'op', 'opak', 'opakowanie', 'opakowania', 'opakowań',
+        'kg', 'g', 'dag', 'l', 'litr', 'litry', 'litrow', 'litrów', 'butelka', 'butelki', 'butelek',
+        'puszka', 'puszki', 'puszek', 'karton', 'kartony', 'kartonów', 'zgrzewka', 'zgrzewki', 'zgrzewek',
+        'pęczek', 'peczek', 'pęczki', 'bochenek', 'bochenki'
+    }
+
+    # 2. Liczba na początku: '2 mleka', '2x chleb', '2 kg ziemniaków', '1.5l wody'
+    m_start = re.match(r'^(\d+(?:[.,]\d+)?)\s*([a-zA-ZąćęłńóśźżĄĆĘŁŃÓŚŹŻ]{1,10})?\s+(.+)$', raw)
+    if m_start:
+        num = m_start.group(1).replace(",", ".")
+        unit = m_start.group(2)
+        rest = m_start.group(3).strip()
+        if unit and unit.lower() in known_units:
+            qty = f"{num} {unit}" if unit.lower() != 'x' else f"{num} szt."
+            return rest, qty
+        elif not unit:
+            return rest, num
+
+    # 3. Liczba na końcu: 'jajka 10', 'mleko 2', 'chleb 2 szt', 'woda 6 butelek'
+    m_end = re.match(r'^(.+?)\s+(\d+(?:[.,]\d+)?)\s*([a-zA-ZąćęłńóśźżĄĆĘŁŃÓŚŹŻ]{1,10})?$', raw)
+    if m_end:
+        item = m_end.group(1).strip()
+        num = m_end.group(2).replace(",", ".")
+        unit = m_end.group(3)
+        if unit and unit.lower() in known_units:
+            return item, f"{num} {unit}"
+        elif not unit:
+            return item, num
+
+    return raw, "1"
+
+
 async def reply_telegram(chat_id: int | str, text: str) -> None:
     if not TELEGRAM_BOT_TOKEN or not chat_id:
         return
@@ -332,17 +401,15 @@ async def telegram_webhook(update: dict):
             await reply_telegram(chat_id, "\n".join(lines))
         return {"ok": True}
 
-    # /kup lub kup
+    # Obsługa komend: /kup ..., kup ..., lub po prostu listy zakupów wpisanej wprost (np. "2 mleka, 5 jajek")
     clean_text = text
     if clean_text.lower().startswith("/kup "):
         clean_text = clean_text[5:].strip()
     elif clean_text.lower().startswith("kup "):
         clean_text = clean_text[4:].strip()
-    else:
-        # Jeśli nie jest to komenda /kup, nie spamujemy użytkownika
-        return {"ok": True}
 
-    items_raw = [i.strip() for i in clean_text.split(",") if i.strip()]
+    # Dzielenie po przecinkach, średnikach lub nowych liniach:
+    items_raw = [i.strip() for i in re.split(r'[,;\n]+', clean_text) if i.strip()]
     if not items_raw:
         return {"ok": True}
 
@@ -350,16 +417,9 @@ async def telegram_webhook(update: dict):
     added_summary = []
     async with httpx.AsyncClient(timeout=10.0) as client:
         for raw in items_raw:
-            item_name = raw
-            qty = "1"
-            if " - " in raw:
-                parts = raw.split(" - ", 1)
-                item_name = parts[0].strip()
-                qty = parts[1].strip()
-            elif "x " in raw and raw.split("x ", 1)[0].isdigit():
-                parts = raw.split("x ", 1)
-                qty = f"{parts[0]} szt."
-                item_name = parts[1].strip()
+            item_name, qty = parse_polish_item(raw)
+            if not item_name:
+                continue
 
             added_summary.append(f"{item_name} ({qty})" if qty != "1" else item_name)
             await client.post(
@@ -368,8 +428,9 @@ async def telegram_webhook(update: dict):
                 json={"item": item_name, "quantity": qty, "category": "Wszystko", "added_by": f"TG: {sender}"}
             )
 
-    await ws_manager.broadcast_refresh("shopping")
-    await reply_telegram(chat_id, f"✅ Dodano do wspólnej listy ({sender}):\n• <b>" + "\n• ".join(added_summary) + "</b>")
+    if added_summary:
+        await ws_manager.broadcast_refresh("shopping")
+        await reply_telegram(chat_id, f"✅ Dodano do wspólnej listy ({sender}):\n• <b>" + "\n• ".join(added_summary) + "</b>")
     return {"ok": True}
 
 

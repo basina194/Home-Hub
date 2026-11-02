@@ -3,19 +3,22 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   <title>Nexus Hub</title>
-  <meta name="theme-color" content="#06080e">
+  <meta name="theme-color" content="#0a0c10">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Nexus Hub">
-  <link rel="manifest" href="/manifest.json">
+  <link rel="manifest" href="/manifest.json?v=4">
   <link rel="icon" type="image/svg+xml" href="/static/icon.svg">
   <link rel="apple-touch-icon" href="/static/icon.svg">
 
-  <!-- Google Fonts: Syne (Display) & Plus Jakarta Sans (Body) -->
+  <!-- Plus Jakarta Sans Font (Clean, razor-sharp, proportional) -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -25,13 +28,12 @@
       theme: {
         extend: {
           fontFamily: {
-            display: ['"Syne"', 'sans-serif'],
-            sans: ['"Plus Jakarta Sans"', 'system-ui', 'sans-serif'],
+            sans: ['"Plus Jakarta Sans"', '-apple-system', 'BlinkMacSystemFont', 'system-ui', 'sans-serif'],
           },
           colors: {
             brand: {
               emerald: '#10b981',
-              cyan: '#06b6d4',
+              indigo: '#6366f1',
               rose: '#f43f5e',
             }
           }
@@ -40,84 +42,55 @@
     }
   </script>
   <style>
-    :root {
-      --bg-base: #06080e;
-      --card-bg: rgba(13, 18, 30, 0.78);
-      --card-border: rgba(255, 255, 255, 0.08);
-      --card-glow: rgba(16, 185, 129, 0.12);
-    }
     body {
       padding-top: env(safe-area-inset-top);
       padding-bottom: env(safe-area-inset-bottom);
-      background-color: var(--bg-base);
+      background-color: #08090d;
       background-image: 
-        radial-gradient(circle at 50% -5%, rgba(16, 185, 129, 0.14) 0%, transparent 45%),
-        radial-gradient(circle at 90% 15%, rgba(99, 102, 241, 0.10) 0%, transparent 40%),
-        radial-gradient(circle at 10% 80%, rgba(244, 63, 94, 0.06) 0%, transparent 40%);
+        radial-gradient(circle at 50% 0%, rgba(99, 102, 241, 0.12) 0%, transparent 40%),
+        radial-gradient(circle at 10% 20%, rgba(16, 185, 129, 0.08) 0%, transparent 35%);
       background-attachment: fixed;
-    }
-    .glass-card {
-      background: var(--card-bg);
-      backdrop-filter: blur(24px);
-      -webkit-backdrop-filter: blur(24px);
-      border: 1px solid var(--card-border);
-      box-shadow: 
-        inset 0 1px 1px 0 rgba(255, 255, 255, 0.1),
-        0 20px 40px -15px rgba(0, 0, 0, 0.6);
     }
     .custom-scrollbar::-webkit-scrollbar {
       width: 4px;
     }
     .custom-scrollbar::-webkit-scrollbar-thumb {
-      background-color: rgba(255, 255, 255, 0.12);
+      background-color: rgba(255, 255, 255, 0.1);
       border-radius: 9999px;
     }
     * {
       touch-action: manipulation;
     }
-    @keyframes pulse-subtle {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.6; }
-    }
-    .animate-pulse-subtle {
-      animation: pulse-subtle 2.5s infinite;
-    }
   </style>
 </head>
-<body class="text-slate-100 min-h-screen flex flex-col font-sans pb-24 antialiased selection:bg-emerald-500 selection:text-black">
+<body class="text-slate-100 min-h-screen flex flex-col font-sans pb-28 antialiased selection:bg-indigo-500 selection:text-white">
 
-  <!-- TOP APP BAR -->
-  <header class="sticky top-0 z-40 bg-[#06080e]/85 backdrop-blur-2xl border-b border-white/[0.06] px-4 py-3">
-    <div class="max-w-3xl mx-auto flex items-center justify-between">
+  <!-- TOP HEADER -->
+  <header class="sticky top-0 z-40 bg-[#08090d]/85 backdrop-blur-2xl border-b border-white/[0.06] px-4 py-3">
+    <div class="max-w-2xl mx-auto flex items-center justify-between">
       
-      <!-- Brand & Status -->
-      <div class="flex items-center gap-3">
-        <div class="w-10 h-10 rounded-2xl bg-gradient-to-tr from-emerald-500 via-teal-500 to-cyan-500 p-[1px] shadow-lg shadow-emerald-500/20">
-          <div class="w-full h-full bg-[#080d1a] rounded-[15px] flex items-center justify-center">
-            <span class="text-base">⚡</span>
-          </div>
-        </div>
-        <div>
-          <div class="flex items-center gap-2">
-            <h1 class="font-display font-extrabold text-base tracking-wider text-white uppercase">Nexus</h1>
-            <span class="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 tracking-widest font-mono">LIVE</span>
-          </div>
-          <p id="weather-quick" class="text-xs text-slate-400 font-medium">Ładowanie pogody...</p>
+      <!-- Date & App Identity -->
+      <div>
+        <div id="header-date" class="text-[10px] font-extrabold tracking-widest uppercase text-indigo-400 font-mono">DZIŚ</div>
+        <div class="flex items-center gap-2 mt-0.5">
+          <h1 class="text-lg font-extrabold tracking-tight text-white">Nexus Hub</h1>
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400"></span>
         </div>
       </div>
 
-      <!-- Segmented Mode Control (iOS Style) & Pin -->
+      <!-- Segmented Mode Switcher (Things 3 / Apple style) -->
       <div class="flex items-center gap-2">
-        <div class="bg-[#0b1120] p-1 rounded-2xl border border-white/[0.08] flex items-center shadow-inner">
-          <button onclick="setTab('home')" id="tab-btn-home" class="px-4 py-1.5 rounded-xl text-xs font-bold transition-all bg-emerald-500 text-black shadow-md shadow-emerald-500/25">
-            Dom
+        <div class="bg-[#12141c] p-1 rounded-2xl border border-white/[0.08] flex items-center shadow-inner">
+          <button onclick="setTab('home')" id="tab-btn-home" class="px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all bg-indigo-600 text-white shadow-md shadow-indigo-600/30">
+            🏠 Dom
           </button>
-          <button onclick="setTab('biz')" id="tab-btn-biz" class="px-4 py-1.5 rounded-xl text-xs font-semibold transition-all text-slate-400 hover:text-white">
-            Firma
+          <button onclick="setTab('biz')" id="tab-btn-biz" class="px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all text-slate-400 hover:text-white">
+            💼 Firma
           </button>
         </div>
 
-        <button onclick="changePinPrompt()" title="Zmień kod PIN" class="p-2 rounded-2xl bg-[#0b1120] hover:bg-[#131b2e] border border-white/[0.08] text-slate-400 hover:text-white transition-all active:scale-95">
+        <!-- Lock / PIN button -->
+        <button onclick="changePinPrompt()" title="Zmień kod PIN" class="p-2 rounded-xl bg-[#12141c] hover:bg-[#1a1d29] border border-white/[0.08] text-slate-400 hover:text-white transition-all active:scale-95">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
           </svg>
@@ -128,127 +101,113 @@
   </header>
 
   <!-- MAIN CONTAINER -->
-  <main class="flex-1 max-w-3xl w-full mx-auto p-4 space-y-5">
+  <main class="flex-1 max-w-2xl w-full mx-auto p-4 space-y-4">
 
     <!-- ==================== TAB: DOM ==================== -->
-    <div id="section-home" class="space-y-5">
+    <div id="section-home" class="space-y-4">
 
-      <!-- WEATHER DASHBOARD CARD -->
-      <div class="glass-card rounded-3xl p-5 relative overflow-hidden">
-        <div class="absolute -right-8 -top-8 w-40 h-40 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none"></div>
-        <div class="flex items-center justify-between relative z-10">
+      <!-- WEATHER PILL / WIDGET -->
+      <div class="bg-[#11131a] rounded-2xl border border-white/[0.07] px-4 py-3 flex items-center justify-between shadow-xl">
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-sky-500/20 to-blue-500/20 border border-sky-500/30 flex items-center justify-center text-lg">
+            🌤️
+          </div>
           <div>
             <div class="flex items-center gap-2">
-              <span class="text-[10px] font-bold tracking-widest uppercase text-emerald-400">Warunki atmosferyczne</span>
-              <span class="text-[10px] text-slate-400 px-2 py-0.5 rounded-full bg-white/[0.04] border border-white/[0.06]">Gniezno</span>
+              <span id="weather-temp" class="text-base font-extrabold text-white">--°C</span>
+              <span class="text-xs text-slate-400 font-medium">Gniezno</span>
             </div>
-            <div class="mt-2 flex items-baseline gap-3">
-              <span id="weather-temp" class="font-display text-4xl sm:text-5xl font-extrabold tracking-tight text-white">--°C</span>
-              <span id="weather-rain" class="text-xs font-bold text-cyan-400 px-2.5 py-1 rounded-xl bg-cyan-500/10 border border-cyan-500/20">
-                💧 --% opadów
-              </span>
+            <div class="text-[11px] text-slate-400 flex items-center gap-2">
+              <span id="weather-rain">💧 --% opadów</span>
+              <span>•</span>
+              <span id="weather-wind">Wiatr -- km/h</span>
             </div>
-          </div>
-          <div class="text-right">
-            <div class="text-xs text-slate-400 font-medium">Prędkość wiatru</div>
-            <div id="weather-wind" class="font-display text-lg sm:text-xl font-bold text-slate-200 mt-1">-- km/h</div>
           </div>
         </div>
+        <button onclick="forceAppRefresh()" title="Odśwież najnowszą wersję" class="text-[11px] font-semibold text-slate-400 hover:text-white px-2.5 py-1 rounded-lg bg-white/[0.04] border border-white/[0.06] transition-all active:scale-95 flex items-center gap-1">
+          <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+          </svg>
+          <span>Odśwież</span>
+        </button>
       </div>
 
-      <!-- SHOPPING LIST CARD -->
-      <div class="glass-card rounded-3xl p-5 space-y-4">
+      <!-- SHOPPING CARD -->
+      <div class="bg-[#11131a] rounded-3xl border border-white/[0.07] p-5 space-y-4 shadow-2xl">
         
-        <!-- Shopping Header -->
+        <!-- Header -->
         <div class="flex items-center justify-between">
-          <div class="flex items-center gap-3">
-            <div class="w-9 h-9 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center text-black font-bold shadow-lg shadow-emerald-500/20">
-              🛒
-            </div>
-            <div>
-              <h2 class="font-display font-extrabold text-base tracking-wide text-white flex items-center gap-2">
-                Lista Zakupów
-                <span id="shopping-badge-count" class="text-xs font-sans font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                  0
-                </span>
-              </h2>
-              <p class="text-xs text-slate-400">Wspólna synchronizacja w czasie rzeczywistym</p>
-            </div>
+          <div class="flex items-center gap-2.5">
+            <h2 class="text-base font-bold text-white flex items-center gap-2">
+              <span>Lista Zakupów</span>
+              <span id="shopping-badge-count" class="text-xs font-bold px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                0
+              </span>
+            </h2>
           </div>
 
-          <button onclick="clearBoughtItems()" id="clear-bought-btn" class="text-xs px-3 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.09] text-slate-300 hover:text-white border border-white/[0.08] transition-all active:scale-95 flex items-center gap-1.5">
-            <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <button onclick="clearBoughtItems()" id="clear-bought-btn" class="text-xs text-slate-400 hover:text-rose-400 transition-colors flex items-center gap-1 py-1">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
             </svg>
             <span>Wyczyść kupione</span>
           </button>
         </div>
 
-        <!-- Add Item Form (Sculpted Glass Input) -->
-        <div class="space-y-2">
-          <form onsubmit="handleShoppingSubmit(event)" class="bg-[#090e1a] p-1.5 rounded-2xl border border-white/[0.08] flex flex-col sm:flex-row gap-1.5 shadow-inner focus-within:border-emerald-500/50 focus-within:ring-2 focus-within:ring-emerald-500/20 transition-all">
+        <!-- Smart Natural Language Input -->
+        <form onsubmit="handleShoppingSubmit(event)" class="space-y-2">
+          <div class="bg-[#0b0c10] p-1.5 rounded-2xl border border-white/[0.08] flex items-center gap-1.5 focus-within:border-indigo-500/60 focus-within:ring-2 focus-within:ring-indigo-500/20 transition-all shadow-inner">
             <input 
               type="text" 
               id="shopping-input" 
-              placeholder="Co trzeba kupić?..." 
+              placeholder="Wpisz np. 2 mleka, 5 jajek, chleb..." 
               required 
-              enterkeyhint="next"
-              class="flex-1 bg-transparent border-0 px-3.5 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none"
+              enterkeyhint="done"
+              class="flex-1 bg-transparent border-0 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none"
             >
-            <div class="flex items-center gap-1.5">
-              <input 
-                type="text" 
-                id="shopping-qty" 
-                placeholder="Ilość (np. 2 op., 1 kg)" 
-                enterkeyhint="done"
-                class="w-full sm:w-36 bg-white/[0.03] border border-white/[0.06] rounded-xl px-3 py-2 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-emerald-500/40"
-              >
-              <button 
-                type="submit" 
-                class="bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-black font-extrabold px-4 py-2 rounded-xl text-sm transition-all shadow-md shadow-emerald-500/25 whitespace-nowrap flex items-center gap-1"
-              >
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/>
-                </svg>
-                <span>Dodaj</span>
-              </button>
-            </div>
-          </form>
-
-          <!-- Quick Suggestions Chips (Tap to add in 1 click!) -->
-          <div class="flex items-center gap-1.5 overflow-x-auto custom-scrollbar py-1 text-xs select-none">
-            <span class="text-slate-500 text-[11px] font-semibold flex-shrink-0">Szybkie:</span>
-            <button onclick="quickAdd('Chleb')" class="px-2.5 py-1 rounded-xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.06] text-slate-300 transition-all active:scale-95 flex-shrink-0">+ Chleb</button>
-            <button onclick="quickAdd('Mleko', '2 op.')" class="px-2.5 py-1 rounded-xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.06] text-slate-300 transition-all active:scale-95 flex-shrink-0">+ Mleko</button>
-            <button onclick="quickAdd('Masło')" class="px-2.5 py-1 rounded-xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.06] text-slate-300 transition-all active:scale-95 flex-shrink-0">+ Masło</button>
-            <button onclick="quickAdd('Kawa')" class="px-2.5 py-1 rounded-xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.06] text-slate-300 transition-all active:scale-95 flex-shrink-0">+ Kawa</button>
-            <button onclick="quickAdd('Jajka', '10 szt')" class="px-2.5 py-1 rounded-xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.06] text-slate-300 transition-all active:scale-95 flex-shrink-0">+ Jajka</button>
-            <button onclick="quickAdd('Woda', 'zgrzewka')" class="px-2.5 py-1 rounded-xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.06] text-slate-300 transition-all active:scale-95 flex-shrink-0">+ Woda</button>
+            <button 
+              type="submit" 
+              class="bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white font-bold px-4 py-2 rounded-xl text-sm transition-all shadow-md shadow-indigo-600/30 whitespace-nowrap flex items-center gap-1"
+            >
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/>
+              </svg>
+              <span>Dodaj</span>
+            </button>
           </div>
-        </div>
 
-        <!-- Telegram Info Bar with Wife status -->
-        <div class="flex items-center justify-between p-3 rounded-2xl bg-sky-500/[0.06] border border-sky-500/15 text-xs text-sky-300">
+          <!-- Quick suggestion chips -->
+          <div class="flex items-center gap-1.5 overflow-x-auto custom-scrollbar py-0.5 text-xs select-none">
+            <button type="button" onclick="quickAdd('Chleb')" class="px-2.5 py-1 rounded-xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.05] text-slate-300 transition-all active:scale-95 flex-shrink-0">+ Chleb</button>
+            <button type="button" onclick="quickAdd('Mleko 2')" class="px-2.5 py-1 rounded-xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.05] text-slate-300 transition-all active:scale-95 flex-shrink-0">+ 2 Mleka</button>
+            <button type="button" onclick="quickAdd('Masło')" class="px-2.5 py-1 rounded-xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.05] text-slate-300 transition-all active:scale-95 flex-shrink-0">+ Masło</button>
+            <button type="button" onclick="quickAdd('Jajka 10')" class="px-2.5 py-1 rounded-xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.05] text-slate-300 transition-all active:scale-95 flex-shrink-0">+ 10 Jajek</button>
+            <button type="button" onclick="quickAdd('Kawa')" class="px-2.5 py-1 rounded-xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.05] text-slate-300 transition-all active:scale-95 flex-shrink-0">+ Kawa</button>
+            <button type="button" onclick="quickAdd('Woda 6')" class="px-2.5 py-1 rounded-xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.05] text-slate-300 transition-all active:scale-95 flex-shrink-0">+ 6 Wód</button>
+          </div>
+        </form>
+
+        <!-- Telegram Info Pill -->
+        <div class="flex items-center justify-between p-2.5 rounded-xl bg-sky-500/[0.06] border border-sky-500/15 text-xs text-sky-300">
           <div class="flex items-center gap-2 min-w-0">
-            <span class="text-base">✈️</span>
-            <div class="truncate">
-              <span>Bot Telegram aktywny! Ty i <b>Żona</b> możecie pisać: </span>
-              <code class="font-mono bg-sky-950/80 px-1.5 py-0.5 rounded text-white font-bold">/kup mleko, ser</code>
-            </div>
+            <span class="text-sm">✈️</span>
+            <span class="truncate">Telegram: napisz po prostu <code class="font-bold text-white bg-sky-950/80 px-1 py-0.5 rounded">2 mleka, 5 jajek</code></span>
           </div>
-          <span class="text-[10px] text-sky-300 font-bold px-2 py-0.5 rounded-full bg-sky-500/10 border border-sky-500/20 flex-shrink-0 ml-2">2 OSOBY</span>
+          <span class="text-[10px] font-bold text-sky-300 px-2 py-0.5 rounded-md bg-sky-500/10 border border-sky-500/20 flex-shrink-0 ml-2">TY & ŻONA</span>
         </div>
 
-        <!-- Shopping Filter Tabs -->
-        <div class="flex items-center gap-2 pt-1">
-          <button onclick="setShoppingFilter('all')" id="filter-all" class="text-xs font-bold px-3 py-1 rounded-xl bg-white/[0.08] text-white transition-all">Wszystkie</button>
-          <button onclick="setShoppingFilter('todo')" id="filter-todo" class="text-xs font-semibold px-3 py-1 rounded-xl text-slate-400 hover:text-white transition-all">Do kupienia</button>
-          <button onclick="setShoppingFilter('done')" id="filter-done" class="text-xs font-semibold px-3 py-1 rounded-xl text-slate-400 hover:text-white transition-all">Kupione</button>
+        <!-- ACTIVE ITEMS -->
+        <div id="shopping-active-list" class="space-y-2">
+          <div class="text-center py-8 text-sm text-slate-500 animate-pulse">Ładowanie produktów...</div>
         </div>
 
-        <!-- Items List -->
-        <div id="shopping-list" class="space-y-2 max-h-[32rem] overflow-y-auto custom-scrollbar pr-1">
-          <div class="text-center py-10 text-sm text-slate-500">Pobieranie listy zakupów...</div>
+        <!-- COMPLETED ITEMS (Collapsible) -->
+        <div id="completed-wrapper" class="pt-2 border-t border-white/[0.05] hidden">
+          <button onclick="toggleCompletedSection()" class="w-full flex items-center justify-between py-1 text-xs text-slate-400 hover:text-slate-200 transition-colors font-medium">
+            <span id="completed-count-label">Kupione (0)</span>
+            <span id="completed-arrow" class="text-slate-500">▾</span>
+          </button>
+          <div id="shopping-completed-list" class="space-y-2 mt-2"></div>
         </div>
 
       </div>
@@ -256,38 +215,33 @@
     </div>
 
     <!-- ==================== TAB: FIRMA ==================== -->
-    <div id="section-biz" class="space-y-5 hidden">
+    <div id="section-biz" class="space-y-4 hidden">
 
-      <!-- STATS BAR -->
+      <!-- STATS -->
       <div class="grid grid-cols-3 gap-3">
-        <div class="glass-card rounded-2xl p-4 text-center">
-          <span class="text-xs text-slate-400 font-medium">Wszystkie sprawy</span>
-          <div id="biz-total-count" class="font-display text-2xl font-extrabold text-white mt-1">0</div>
+        <div class="bg-[#11131a] rounded-2xl border border-white/[0.07] p-3.5 text-center">
+          <span class="text-xs text-slate-400 font-medium">Wszystkie</span>
+          <div id="biz-total-count" class="text-xl font-extrabold text-white mt-0.5">0</div>
         </div>
-        <div class="glass-card rounded-2xl p-4 text-center">
+        <div class="bg-[#11131a] rounded-2xl border border-white/[0.07] p-3.5 text-center">
           <span class="text-xs text-amber-400 font-medium">W toku</span>
-          <div id="biz-todo-count" class="font-display text-2xl font-extrabold text-amber-400 mt-1">0</div>
+          <div id="biz-todo-count" class="text-xl font-extrabold text-amber-400 mt-0.5">0</div>
         </div>
-        <div class="glass-card rounded-2xl p-4 text-center">
+        <div class="bg-[#11131a] rounded-2xl border border-white/[0.07] p-3.5 text-center">
           <span class="text-xs text-rose-400 font-medium">Pilne</span>
-          <div id="biz-urgent-count" class="font-display text-2xl font-extrabold text-rose-400 mt-1">0</div>
+          <div id="biz-urgent-count" class="text-xl font-extrabold text-rose-400 mt-0.5">0</div>
         </div>
       </div>
 
-      <!-- ADD TASK FORM -->
-      <div class="glass-card rounded-3xl p-5 space-y-4">
-        <div class="flex items-center gap-3">
-          <div class="w-9 h-9 rounded-2xl bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center text-white shadow-lg shadow-indigo-500/20 font-bold">
-            📋
-          </div>
-          <div>
-            <h2 class="font-display font-extrabold text-base tracking-wide text-white">Nowa Sprawa / Polisa</h2>
-            <p class="text-xs text-slate-400">Rejestr spraw biznesowych w Supabase</p>
-          </div>
-        </div>
+      <!-- ADD TASK -->
+      <div class="bg-[#11131a] rounded-3xl border border-white/[0.07] p-5 space-y-3.5 shadow-2xl">
+        <h2 class="text-base font-bold text-white flex items-center gap-2">
+          <span>📋</span>
+          <span>Nowa Sprawa / Polisa</span>
+        </h2>
 
         <form onsubmit="handleBizSubmit(event)" class="space-y-3">
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
             <div>
               <label class="block text-xs font-semibold text-slate-400 mb-1">Klient / Firma</label>
               <input 
@@ -295,14 +249,14 @@
                 id="biz-client" 
                 placeholder="np. Jan Kowalski" 
                 required 
-                class="w-full bg-[#090e1a] border border-white/[0.08] rounded-xl px-3.5 py-2.5 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                class="w-full bg-[#0b0c10] border border-white/[0.08] rounded-xl px-3 py-2 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:border-indigo-500"
               >
             </div>
             <div>
-              <label class="block text-xs font-semibold text-slate-400 mb-1">Typ zadania</label>
+              <label class="block text-xs font-semibold text-slate-400 mb-1">Typ sprawy</label>
               <select 
                 id="biz-type" 
-                class="w-full bg-[#090e1a] border border-white/[0.08] rounded-xl px-3.5 py-2.5 text-sm text-slate-300 focus:outline-none focus:border-indigo-500"
+                class="w-full bg-[#0b0c10] border border-white/[0.08] rounded-xl px-3 py-2 text-sm text-slate-300 focus:outline-none focus:border-indigo-500"
               >
                 <option value="Wznowienie polisy">📄 Wznowienie polisy</option>
                 <option value="Nowa oferta">💼 Nowa oferta</option>
@@ -314,32 +268,32 @@
             </div>
           </div>
 
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
             <div>
               <label class="block text-xs font-semibold text-slate-400 mb-1">Termin realizacji</label>
               <input 
                 type="date" 
                 id="biz-date" 
                 required 
-                class="w-full bg-[#090e1a] border border-white/[0.08] rounded-xl px-3.5 py-2.5 text-sm text-slate-300 focus:outline-none focus:border-indigo-500"
+                class="w-full bg-[#0b0c10] border border-white/[0.08] rounded-xl px-3 py-2 text-sm text-slate-300 focus:outline-none focus:border-indigo-500"
               >
             </div>
             <div>
               <label class="block text-xs font-semibold text-slate-400 mb-1">Priorytet</label>
               <select 
                 id="biz-priority" 
-                class="w-full bg-[#090e1a] border border-white/[0.08] rounded-xl px-3.5 py-2.5 text-sm text-slate-300 focus:outline-none focus:border-indigo-500"
+                class="w-full bg-[#0b0c10] border border-white/[0.08] rounded-xl px-3 py-2 text-sm text-slate-300 focus:outline-none focus:border-indigo-500"
               >
                 <option value="Normalny">Normalny</option>
                 <option value="Wysoki">Wysoki</option>
-                <option value="Krytyczny">🚨 Krytyczny (Alert Telegram do 2 osób)</option>
+                <option value="Krytyczny">🚨 Krytyczny (Alert Telegram)</option>
               </select>
             </div>
           </div>
 
           <button 
             type="submit" 
-            class="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold py-2.5 rounded-xl text-sm transition-all shadow-lg shadow-indigo-600/25 active:scale-98"
+            class="w-full bg-indigo-600 hover:bg-indigo-500 active:scale-98 text-white font-bold py-2.5 rounded-xl text-sm transition-all shadow-md shadow-indigo-600/30"
           >
             Zapisz sprawę
           </button>
@@ -347,8 +301,8 @@
       </div>
 
       <!-- BIZ TASKS LIST -->
-      <div class="glass-card rounded-3xl p-5 space-y-3">
-        <h3 class="font-display font-bold text-sm tracking-wide text-slate-300">Lista Spraw i Wznowień</h3>
+      <div class="bg-[#11131a] rounded-3xl border border-white/[0.07] p-5 space-y-3 shadow-2xl">
+        <h3 class="text-sm font-bold text-slate-300">Rejestr Spraw</h3>
         <div id="biz-tasks-list" class="space-y-2 max-h-[30rem] overflow-y-auto custom-scrollbar pr-1">
           <div class="text-center py-8 text-sm text-slate-500">Pobieranie spraw...</div>
         </div>
@@ -358,40 +312,81 @@
 
   </main>
 
-  <!-- BOTTOM FLOATING DOCK -->
-  <footer class="fixed bottom-0 left-0 right-0 z-40 bg-[#06080e]/90 backdrop-blur-2xl border-t border-white/[0.06] px-4 py-2.5">
-    <div class="max-w-3xl mx-auto flex items-center justify-between">
+  <!-- BOTTOM STATUS BAR -->
+  <footer class="fixed bottom-0 left-0 right-0 z-40 bg-[#08090d]/90 backdrop-blur-2xl border-t border-white/[0.06] px-4 py-2.5">
+    <div class="max-w-2xl mx-auto flex items-center justify-between">
       
-      <!-- WebSocket Live Indicator -->
+      <!-- Live WS Indicator -->
       <div class="flex items-center gap-2">
-        <span id="ws-indicator" class="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse"></span>
-        <span id="ws-status" class="text-xs font-bold text-slate-400 font-mono">Łączenie...</span>
+        <span id="ws-indicator" class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+        <span id="ws-status" class="text-xs font-semibold text-slate-400">Łączenie...</span>
       </div>
 
-      <!-- Live Items Counter -->
-      <div id="bottom-summary" class="text-xs text-slate-400 font-semibold hidden sm:block">
-        Wszystko aktualne
+      <!-- Version & Cache Reset -->
+      <div class="flex items-center gap-2">
+        <button onclick="forceAppRefresh()" class="text-[11px] text-slate-500 hover:text-slate-300 transition-colors">
+          Wersja 4.0 • Odśwież pamięć
+        </button>
       </div>
-
-      <!-- Install PWA Button -->
-      <button id="pwa-install-btn" class="hidden text-xs bg-emerald-500 hover:bg-emerald-400 text-black px-3 py-1.5 rounded-xl font-extrabold shadow-md transition-all active:scale-95">
-        📲 Dodaj do ekranu
-      </button>
 
     </div>
   </footer>
 
-  <!-- JAVASCRIPT -->
+  <!-- SCRIPT -->
   <script>
     let activeTab = 'home';
-    let shoppingFilter = 'all';
     let appPin = localStorage.getItem('nexus_app_pin') || '9045';
     let socket = null;
-    let deferredPrompt = null;
+    let completedOpen = true;
     
     // In-memory data store for 0ms OPTIMISTIC UI
     let shoppingItems = [];
     let bizTasks = [];
+
+    // Client-side NLP Polish Item Parser (parses "2 mleka", "jajka 10", "chleb 2 szt", "2x chleb")
+    function parsePolishItem(raw) {
+      raw = (raw || '').trim();
+      if (!raw) return { item: '', quantity: '1' };
+
+      if (raw.includes(' - ')) {
+        const parts = raw.split(' - ');
+        return { item: parts[0].trim(), quantity: parts.slice(1).join(' - ').trim() };
+      }
+
+      const knownUnits = new Set([
+        'x', 'szt', 'sztuk', 'sztuki', 'op', 'opak', 'opakowanie', 'opakowania', 'opakowań',
+        'kg', 'g', 'dag', 'l', 'litr', 'litry', 'litrow', 'litrów', 'butelka', 'butelki', 'butelek',
+        'puszka', 'puszki', 'puszek', 'karton', 'kartony', 'kartonów', 'zgrzewka', 'zgrzewki', 'zgrzewek'
+      ]);
+
+      // 1. Liczba na początku: "2 mleka", "2x chleb", "2 kg mąki"
+      const matchStart = raw.match(/^(\d+(?:[.,]\d+)?)\s*([a-zA-ZąćęłńóśźżĄĆĘŁŃÓŚŹŻ]{1,10})?\s+(.+)$/);
+      if (matchStart) {
+        const num = matchStart[1].replace(',', '.');
+        const unit = matchStart[2];
+        const rest = matchStart[3].trim();
+        if (unit && knownUnits.has(unit.toLowerCase())) {
+          return { item: rest, quantity: unit.toLowerCase() === 'x' ? `${num} szt.` : `${num} ${unit}` };
+        } else if (!unit) {
+          return { item: rest, quantity: num };
+        }
+      }
+
+      // 2. Liczba na końcu: "jajka 10", "chleb 2 szt", "mleko 2"
+      const matchEnd = raw.match(/^(.+?)\s+(\d+(?:[.,]\d+)?)\s*([a-zA-ZąćęłńóśźżĄĆĘŁŃÓŚŹŻ]{1,10})?$/);
+      if (matchEnd) {
+        const item = matchEnd[1].trim();
+        const num = matchEnd[2].replace(',', '.');
+        const unit = matchEnd[3];
+        if (unit && knownUnits.has(unit.toLowerCase())) {
+          return { item: item, quantity: `${num} ${unit}` };
+        } else if (!unit) {
+          return { item: item, quantity: num };
+        }
+      }
+
+      return { item: raw, quantity: '1' };
+    }
 
     function getHeaders() {
       return {
@@ -409,6 +404,21 @@
       }
     }
 
+    // Wymuszone czyszczenie cache PWA
+    async function forceAppRefresh() {
+      if ('caches' in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map(k => caches.delete(k)));
+      }
+      if ('serviceWorker' in navigator) {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        for (let r of registrations) {
+          await r.unregister();
+        }
+      }
+      window.location.reload(true);
+    }
+
     function setTab(tab) {
       activeTab = tab;
       const homeSec = document.getElementById('section-home');
@@ -419,29 +429,21 @@
       if (tab === 'home') {
         homeSec.classList.remove('hidden');
         bizSec.classList.add('hidden');
-        dHomeBtn.className = "px-4 py-1.5 rounded-xl text-xs font-bold transition-all bg-emerald-500 text-black shadow-md shadow-emerald-500/25";
-        dBizBtn.className = "px-4 py-1.5 rounded-xl text-xs font-semibold transition-all text-slate-400 hover:text-white";
+        dHomeBtn.className = "px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all bg-indigo-600 text-white shadow-md shadow-indigo-600/30";
+        dBizBtn.className = "px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all text-slate-400 hover:text-white";
       } else {
         homeSec.classList.add('hidden');
         bizSec.classList.remove('hidden');
-        dBizBtn.className = "px-4 py-1.5 rounded-xl text-xs font-bold transition-all bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-md shadow-indigo-500/25";
-        dHomeBtn.className = "px-4 py-1.5 rounded-xl text-xs font-semibold transition-all text-slate-400 hover:text-white";
+        dBizBtn.className = "px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all bg-indigo-600 text-white shadow-md shadow-indigo-600/30";
+        dHomeBtn.className = "px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all text-slate-400 hover:text-white";
       }
-    }
-
-    function setShoppingFilter(filter) {
-      shoppingFilter = filter;
-      document.getElementById('filter-all').className = filter === 'all' ? "text-xs font-bold px-3 py-1 rounded-xl bg-white/[0.12] text-white transition-all shadow" : "text-xs font-semibold px-3 py-1 rounded-xl text-slate-400 hover:text-white transition-all";
-      document.getElementById('filter-todo').className = filter === 'todo' ? "text-xs font-bold px-3 py-1 rounded-xl bg-white/[0.12] text-white transition-all shadow" : "text-xs font-semibold px-3 py-1 rounded-xl text-slate-400 hover:text-white transition-all";
-      document.getElementById('filter-done').className = filter === 'done' ? "text-xs font-bold px-3 py-1 rounded-xl bg-white/[0.12] text-white transition-all shadow" : "text-xs font-semibold px-3 py-1 rounded-xl text-slate-400 hover:text-white transition-all";
-      renderShoppingList();
     }
 
     // --- POGODA ---
     async function fetchWeather() {
       try {
         const res = await fetch('/api/home/weather', { headers: getHeaders() });
-        if (!res.ok) throw new Error('Status ' + res.status);
+        if (!res.ok) return;
         const data = await res.json();
         const cur = data.current || {};
         const daily = data.daily || {};
@@ -452,38 +454,33 @@
 
         document.getElementById('weather-temp').innerText = `${temp}°C`;
         document.getElementById('weather-rain').innerText = `💧 ${rain}% opadów`;
-        document.getElementById('weather-wind').innerText = `${wind} km/h`;
-        document.getElementById('weather-quick').innerText = `${temp}°C • wiatr ${wind} km/h`;
+        document.getElementById('weather-wind').innerText = `Wiatr ${wind} km/h`;
       } catch (e) {
-        document.getElementById('weather-quick').innerText = 'Pogoda niedostępna';
+        console.log('Weather offline');
       }
     }
 
     // --- ZAKUPY (0ms OPTIMISTIC UI) ---
     async function fetchShopping(showLoading = false) {
-      const container = document.getElementById('shopping-list');
+      const activeList = document.getElementById('shopping-active-list');
       if (showLoading && shoppingItems.length === 0) {
-        container.innerHTML = '<div class="text-slate-500 text-sm py-10 text-center animate-pulse">Ładowanie produktów...</div>';
+        activeList.innerHTML = '<div class="text-slate-500 text-sm py-8 text-center animate-pulse">Ładowanie produktów...</div>';
       }
 
       try {
         const res = await fetch('/api/home/shopping', { headers: getHeaders() });
         if (res.status === 401) {
-          container.innerHTML = `
+          activeList.innerHTML = `
             <div class="text-rose-400 text-sm py-6 text-center space-y-2">
-              <div>⚠️ Błędny kod PIN serwera.</div>
+              <div>⚠️ Wymagany PIN (9045).</div>
               <button onclick="changePinPrompt()" class="bg-rose-600 hover:bg-rose-500 text-white text-xs px-3.5 py-1.5 rounded-xl font-bold shadow">
-                🔑 Wprowadź PIN (9045)
+                🔑 Wprowadź PIN
               </button>
             </div>
           `;
           return;
         }
-        if (!res.ok) {
-          const errData = await res.json().catch(() => ({}));
-          container.innerHTML = `<div class="text-rose-400 text-sm py-4 text-center">Błąd: ${errData.detail || res.status}</div>`;
-          return;
-        }
+        if (!res.ok) return;
 
         const items = await res.json();
         if (Array.isArray(items)) {
@@ -491,111 +488,121 @@
           renderShoppingList();
         }
       } catch (e) {
-        if (shoppingItems.length === 0) {
-          container.innerHTML = `<div class="text-rose-400 text-sm py-4 text-center">Błąd połączenia: ${e.message}</div>`;
-        }
+        console.error(e);
+      }
+    }
+
+    function toggleCompletedSection() {
+      completedOpen = !completedOpen;
+      const compList = document.getElementById('shopping-completed-list');
+      const arrow = document.getElementById('completed-arrow');
+      if (completedOpen) {
+        compList.classList.remove('hidden');
+        arrow.innerText = '▾';
+      } else {
+        compList.classList.add('hidden');
+        arrow.innerText = '▸';
       }
     }
 
     function renderShoppingList() {
-      const container = document.getElementById('shopping-list');
+      const activeList = document.getElementById('shopping-active-list');
+      const completedList = document.getElementById('shopping-completed-list');
+      const completedWrapper = document.getElementById('completed-wrapper');
       const badgeCount = document.getElementById('shopping-badge-count');
-      const bottomSummary = document.getElementById('bottom-summary');
+      const completedLabel = document.getElementById('completed-count-label');
 
-      const remaining = shoppingItems.filter(i => !i.is_bought).length;
-      badgeCount.innerText = remaining;
-      bottomSummary.innerText = remaining > 0 ? `Do kupienia: ${remaining} pozycji` : 'Wszystko kupione 🎉';
+      const activeItems = shoppingItems.filter(i => !i.is_bought);
+      const completedItems = shoppingItems.filter(i => !!i.is_bought);
 
-      if (!shoppingItems || shoppingItems.length === 0) {
-        container.innerHTML = `
-          <div class="text-center py-12 px-4 rounded-3xl bg-white/[0.02] border border-white/[0.04]">
-            <div class="text-4xl mb-2">🎉</div>
-            <div class="font-display font-bold text-base text-slate-200">Koszyk jest pusty!</div>
-            <div class="text-xs text-slate-500 mt-1">Dodaj produkty powyżej lub wyślij /kup na Telegramie.</div>
+      badgeCount.innerText = activeItems.length;
+
+      // Active items
+      if (activeItems.length === 0) {
+        activeList.innerHTML = `
+          <div class="text-center py-10 px-4 rounded-2xl bg-white/[0.02] border border-white/[0.04]">
+            <div class="text-3xl mb-1.5">🎉</div>
+            <div class="font-bold text-sm text-slate-200">Wszystko kupione!</div>
+            <div class="text-xs text-slate-500 mt-0.5">Wpisz produkt powyżej lub napisz na Telegramie.</div>
           </div>
         `;
-        return;
+      } else {
+        activeList.innerHTML = activeItems.map(item => renderItemRow(item, false)).join('');
       }
 
-      // Filter
-      let displayedItems = shoppingItems;
-      if (shoppingFilter === 'todo') displayedItems = shoppingItems.filter(i => !i.is_bought);
-      if (shoppingFilter === 'done') displayedItems = shoppingItems.filter(i => i.is_bought);
-
-      if (displayedItems.length === 0) {
-        container.innerHTML = `<div class="text-center py-8 text-sm text-slate-500">Brak pozycji w tym widoku.</div>`;
-        return;
+      // Completed items
+      if (completedItems.length > 0) {
+        completedWrapper.classList.remove('hidden');
+        completedLabel.innerText = `Kupione (${completedItems.length})`;
+        completedList.innerHTML = completedItems.map(item => renderItemRow(item, true)).join('');
+      } else {
+        completedWrapper.classList.add('hidden');
       }
+    }
 
-      container.innerHTML = displayedItems.map(item => {
-        const isBought = !!item.is_bought;
-        const isWife = item.added_by && item.added_by.toLowerCase().includes('żona');
-        const isTg = item.added_by && item.added_by.toLowerCase().includes('tg');
+    function renderItemRow(item, isBought) {
+      const isWife = item.added_by && item.added_by.toLowerCase().includes('żona');
 
-        return `
-          <div class="group flex items-center justify-between p-3.5 rounded-2xl border transition-all duration-150 ${
-            isBought 
-              ? 'bg-white/[0.02] border-white/[0.04] opacity-40' 
-              : 'bg-[#0b101c] hover:bg-[#0f1728] border-white/[0.07] shadow-sm'
-          }">
+      return `
+        <div class="group flex items-center justify-between p-3 rounded-2xl border transition-all duration-150 ${
+          isBought 
+            ? 'bg-white/[0.015] border-white/[0.03] opacity-45' 
+            : 'bg-[#0d0f17] hover:bg-[#121521] border-white/[0.06] shadow-sm'
+        }">
+          
+          <!-- Tap area -->
+          <div class="flex items-center gap-3 cursor-pointer flex-1 min-w-0" onclick="toggleShoppingItem(${item.id})">
             
-            <!-- Checkbox & Text (Clickable area) -->
-            <div class="flex items-center gap-3.5 cursor-pointer flex-1 min-w-0" onclick="toggleShoppingItem(${item.id})">
-              
-              <!-- Checkbox Icon -->
-              <div class="w-6 h-6 rounded-full flex items-center justify-center transition-all duration-150 flex-shrink-0 ${
-                isBought 
-                  ? 'bg-emerald-500 border-2 border-emerald-500 text-black shadow-md shadow-emerald-500/30' 
-                  : 'border-2 border-slate-700 bg-slate-900/60 group-hover:border-emerald-500/70'
-              }">
-                ${isBought ? `
-                  <svg class="w-3.5 h-3.5 text-black font-extrabold stroke-[3]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
-                  </svg>
-                ` : ''}
-              </div>
-
-              <!-- Item Name & Quantity -->
-              <div class="flex flex-wrap items-baseline gap-2 min-w-0">
-                <span class="text-sm font-bold tracking-wide transition-all duration-150 ${
-                  isBought 
-                    ? 'line-through text-slate-500' 
-                    : 'text-slate-100 group-hover:text-white'
-                }">
-                  ${escapeHtml(item.item)}
-                </span>
-                
-                ${item.quantity && item.quantity !== '1' ? `
-                  <span class="text-[11px] font-mono font-bold px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
-                    ${escapeHtml(item.quantity)}
-                  </span>
-                ` : ''}
-              </div>
-            </div>
-
-            <!-- Badges & Single Delete button -->
-            <div class="flex items-center gap-2 flex-shrink-0 ml-2">
-              ${isWife ? `
-                <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-300 border border-rose-500/30 flex items-center gap-1 shadow-sm">
-                  🌸 Żona
-                </span>
-              ` : (item.added_by && item.added_by !== 'Panel' ? `
-                <span class="text-[10px] font-semibold text-slate-400 bg-white/[0.04] border border-white/[0.08] px-2 py-0.5 rounded-md">
-                  ${escapeHtml(item.added_by)}
-                </span>
-              ` : '')}
-
-              <!-- Trash button (single delete) -->
-              <button onclick="deleteSingleItem(event, ${item.id})" title="Usuń produkt" class="opacity-30 group-hover:opacity-100 p-1.5 rounded-lg hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 transition-all">
-                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+            <!-- Checkbox circle -->
+            <div class="w-6 h-6 rounded-full flex items-center justify-center transition-all duration-150 flex-shrink-0 ${
+              isBought 
+                ? 'bg-emerald-500 border-2 border-emerald-500 text-black shadow-sm' 
+                : 'border-2 border-slate-700 bg-slate-900/60 group-hover:border-indigo-400'
+            }">
+              ${isBought ? `
+                <svg class="w-3.5 h-3.5 text-black font-extrabold stroke-[3]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
                 </svg>
-              </button>
+              ` : ''}
             </div>
 
+            <!-- Title & Quantity -->
+            <div class="flex flex-wrap items-baseline gap-2 min-w-0">
+              <span class="text-sm font-bold tracking-tight transition-all duration-150 ${
+                isBought ? 'line-through text-slate-500' : 'text-slate-100 group-hover:text-white'
+              }">
+                ${escapeHtml(item.item)}
+              </span>
+              
+              ${item.quantity && item.quantity !== '1' ? `
+                <span class="text-[11px] font-mono font-bold px-2 py-0.5 rounded-lg bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">
+                  ${escapeHtml(item.quantity)}
+                </span>
+              ` : ''}
+            </div>
           </div>
-        `;
-      }).join('');
+
+          <!-- Badges & Trash icon -->
+          <div class="flex items-center gap-2 flex-shrink-0 ml-2">
+            ${isWife ? `
+              <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-300 border border-rose-500/30 flex items-center gap-1 shadow-sm">
+                🌸 Żona
+              </span>
+            ` : (item.added_by && item.added_by !== 'Panel' ? `
+              <span class="text-[10px] font-semibold text-slate-400 bg-white/[0.04] border border-white/[0.08] px-2 py-0.5 rounded-md">
+                ${escapeHtml(item.added_by)}
+              </span>
+            ` : '')}
+
+            <button onclick="deleteSingleItem(event, ${item.id})" title="Usuń" class="opacity-30 group-hover:opacity-100 p-1.5 rounded-lg hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 transition-all">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+              </svg>
+            </button>
+          </div>
+
+        </div>
+      `;
     }
 
     // 0ms TOGGLE
@@ -603,7 +610,7 @@
       const item = shoppingItems.find(i => i.id === id);
       if (!item) return;
 
-      if ('vibrate' in navigator) navigator.vibrate(12);
+      if ('vibrate' in navigator) navigator.vibrate(10);
 
       item.is_bought = !item.is_bought;
       renderShoppingList();
@@ -617,35 +624,29 @@
       });
     }
 
-    // Quick suggestions helper
-    function quickAdd(item, qty = '1') {
-      const input = document.getElementById('shopping-input');
-      const qtyInput = document.getElementById('shopping-qty');
-      input.value = item;
-      qtyInput.value = qty !== '1' ? qty : '';
-      input.focus();
+    function quickAdd(phrase) {
+      const parsed = parsePolishItem(phrase);
+      addItemOptimistic(parsed.item, parsed.quantity);
     }
 
-    // 0ms ADD
     function handleShoppingSubmit(e) {
       e.preventDefault();
       const input = document.getElementById('shopping-input');
-      const qtyInput = document.getElementById('shopping-qty');
-      let text = input.value.trim();
-      let qty = qtyInput ? qtyInput.value.trim() : '';
+      const text = input.value.trim();
       if (!text) return;
 
-      if (!qty && text.includes(' - ')) {
-        const parts = text.split(' - ');
-        text = parts[0].trim();
-        qty = parts.slice(1).join(' - ').trim();
-      }
+      // Inteligentne parsowanie: "2 mleka", "jajka 10", "chleb"
+      const parsed = parsePolishItem(text);
+      addItemOptimistic(parsed.item, parsed.quantity);
+      input.value = '';
+    }
 
+    function addItemOptimistic(itemName, quantity) {
       const tempId = 'temp_' + Date.now();
       const optimisticItem = {
         id: tempId,
-        item: text,
-        quantity: qty || '1',
+        item: itemName,
+        quantity: quantity || '1',
         category: 'Wszystko',
         is_bought: false,
         added_by: 'Panel'
@@ -653,15 +654,12 @@
 
       shoppingItems.unshift(optimisticItem);
       renderShoppingList();
-      if ('vibrate' in navigator) navigator.vibrate(18);
-
-      input.value = '';
-      if (qtyInput) qtyInput.value = '';
+      if ('vibrate' in navigator) navigator.vibrate(15);
 
       fetch('/api/home/shopping', {
         method: 'POST',
         headers: getHeaders(),
-        body: JSON.stringify({ item: text, quantity: qty || '1', category: 'Wszystko', added_by: 'Panel' })
+        body: JSON.stringify({ item: itemName, quantity: quantity || '1', category: 'Wszystko', added_by: 'Panel' })
       }).then(() => {
         fetchShopping(false);
       }).catch(err => {
@@ -671,7 +669,7 @@
       });
     }
 
-    // 0ms SINGLE DELETE
+    // 0ms DELETE
     function deleteSingleItem(e, id) {
       e.stopPropagation();
       const item = shoppingItems.find(i => i.id === id);
@@ -680,7 +678,7 @@
       const previousState = [...shoppingItems];
       shoppingItems = shoppingItems.filter(i => i.id !== id);
       renderShoppingList();
-      if ('vibrate' in navigator) navigator.vibrate(10);
+      if ('vibrate' in navigator) navigator.vibrate(8);
 
       fetch(`/api/home/shopping/${id}`, {
         method: 'DELETE',
@@ -700,7 +698,7 @@
       const previousState = [...shoppingItems];
       shoppingItems = shoppingItems.filter(i => !i.is_bought);
       renderShoppingList();
-      if ('vibrate' in navigator) navigator.vibrate([15, 30, 15]);
+      if ('vibrate' in navigator) navigator.vibrate([10, 30, 10]);
 
       fetch('/api/home/shopping/clear-bought', {
         method: 'DELETE',
@@ -716,10 +714,7 @@
       const container = document.getElementById('biz-tasks-list');
       try {
         const res = await fetch('/api/biz/tasks', { headers: getHeaders() });
-        if (res.status === 401) {
-          container.innerHTML = '<div class="text-rose-400 text-sm py-4 text-center">Błędny PIN.</div>';
-          return;
-        }
+        if (res.status === 401) return;
         if (!res.ok) return;
         const tasks = await res.json();
         if (Array.isArray(tasks)) {
@@ -727,9 +722,7 @@
           renderBizTasks();
         }
       } catch (e) {
-        if (bizTasks.length === 0) {
-          container.innerHTML = '<div class="text-rose-400 text-sm py-4 text-center">Błąd ładowania spraw.</div>';
-        }
+        console.error(e);
       }
     }
 
@@ -752,12 +745,12 @@
         const isDone = task.status === 'Done';
         const isUrgent = task.priority === 'Krytyczny';
         return `
-          <div class="p-4 rounded-2xl border transition-all ${
+          <div class="p-3.5 rounded-2xl border transition-all ${
             isDone 
-              ? 'bg-white/[0.02] border-white/[0.04] opacity-50' 
+              ? 'bg-white/[0.015] border-white/[0.03] opacity-45' 
               : (isUrgent 
                   ? 'bg-rose-500/[0.08] border-rose-500/30' 
-                  : 'bg-[#0b101c] border-white/[0.07]')
+                  : 'bg-[#0d0f17] border-white/[0.06]')
           } flex items-center justify-between gap-3">
             <div class="flex items-start gap-3 flex-1 min-w-0 cursor-pointer" onclick="toggleBizTask(${task.id})">
               <div class="mt-0.5 w-5 h-5 rounded-lg flex items-center justify-center border transition-all ${
@@ -794,7 +787,7 @@
     function toggleBizTask(id) {
       const task = bizTasks.find(t => t.id === id);
       if (!task) return;
-      if ('vibrate' in navigator) navigator.vibrate(12);
+      if ('vibrate' in navigator) navigator.vibrate(10);
 
       task.status = task.status === 'Done' ? 'Todo' : 'Done';
       renderBizTasks();
@@ -843,8 +836,8 @@
       socket = new WebSocket(wsUrl);
 
       socket.onopen = () => {
-        indicator.className = "w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400/50";
-        status.innerText = "Na żywo • WebSocket";
+        indicator.className = "w-2 h-2 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400/50";
+        status.innerText = "Na żywo";
       };
 
       socket.onmessage = (event) => {
@@ -860,7 +853,7 @@
       };
 
       socket.onclose = () => {
-        indicator.className = "w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse";
+        indicator.className = "w-2 h-2 rounded-full bg-rose-500 animate-pulse";
         status.innerText = "Ponawianie...";
         setTimeout(initWebSocket, 3500);
       };
@@ -886,31 +879,24 @@
         .replace(/'/g, '&#039;');
     }
 
-    // PWA Service Worker & Install Prompt
+    // Auto-update Service Worker
     if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js').catch(err => console.log('SW fail:', err));
-      });
+      navigator.serviceWorker.register('/sw.js?v=4').then(reg => {
+        reg.update();
+      }).catch(err => console.log('SW fail:', err));
     }
 
-    window.addEventListener('beforeinstallprompt', (e) => {
-      e.preventDefault();
-      deferredPrompt = e;
-      const installBtn = document.getElementById('pwa-install-btn');
-      installBtn.classList.remove('hidden');
-      installBtn.addEventListener('click', () => {
-        deferredPrompt.prompt();
-        deferredPrompt.userChoice.then(() => {
-          deferredPrompt = null;
-          installBtn.classList.add('hidden');
-        });
-      });
-    });
-
     document.addEventListener('DOMContentLoaded', () => {
-      const today = new Date().toISOString().split('T')[0];
-      const dateEl = document.getElementById('biz-date');
-      if (dateEl) dateEl.value = today;
+      // Date in Polish
+      const now = new Date();
+      const options = { weekday: 'long', day: 'numeric', month: 'long' };
+      const dateStr = now.toLocaleDateString('pl-PL', options).toUpperCase();
+      const dateEl = document.getElementById('header-date');
+      if (dateEl) dateEl.innerText = dateStr;
+
+      const todayIso = now.toISOString().split('T')[0];
+      const taskDateEl = document.getElementById('biz-date');
+      if (taskDateEl) taskDateEl.value = todayIso;
 
       initWebSocket();
       refreshAllData();
