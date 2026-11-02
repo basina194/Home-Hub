@@ -5,6 +5,8 @@ import json
 import base64
 import asyncio
 import datetime
+import time
+import uuid
 import logging
 from typing import List, Optional
 from contextlib import asynccontextmanager
@@ -752,17 +754,214 @@ async def download_telegram_file(file_id: str) -> tuple[bytes, str]:
         return b"", ""
 
 
+# --- PAMIĘĆ OCZEKUJĄCYCH ZATWIERDZEŃ WYDARZEŃ KALENDARZA ---
+PENDING_CALENDAR_ACTIONS: dict[str, dict] = {}
+LAST_PENDING_PER_CHAT: dict[str, str] = {}
+
+
+def cleanup_pending_actions() -> None:
+    now_ts = time.time()
+    expired = [k for k, v in PENDING_CALENDAR_ACTIONS.items() if now_ts - v.get("created_at", 0) > 7200]
+    for k in expired:
+        PENDING_CALENDAR_ACTIONS.pop(k, None)
+
+
+def format_events_summary(events: list[dict]) -> str:
+    cat_icons = {"Bartosz": "🧔", "Daria": "🌸", "Wspólne": "🏡", "Śmieci": "🗑️"}
+    lines = []
+    for idx, ev in enumerate(events, 1):
+        cat = ev.get("category", "Wspólne")
+        icon = cat_icons.get(cat, "📌")
+        title = ev.get("title", "Wydarzenie")
+        d = ev.get("event_date", "")
+        t = ev.get("event_time", "")
+        time_part = f" o godz. <b>{t}</b>" if t else ""
+        if len(events) == 1:
+            lines.append(f"• {icon} <b>{title}</b>\n  📅 Data: <b>{d}</b>{time_part}\n  🏷️ Kategoria: <b>{cat}</b>")
+        else:
+            lines.append(f"{idx}. {icon} <b>{title}</b> — <b>{d}</b>{time_part} <i>[{cat}]</i>")
+    return "\n".join(lines)
+
+
+async def send_telegram_with_keyboard(chat_id: int | str, text: str, inline_keyboard: list) -> Optional[dict]:
+    if not TELEGRAM_BOT_TOKEN or not chat_id:
+        return None
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            resp = await client.post(url, json={
+                "chat_id": chat_id,
+                "text": text,
+                "parse_mode": "HTML",
+                "reply_markup": {"inline_keyboard": inline_keyboard}
+            })
+            if resp.status_code == 200:
+                return resp.json().get("result")
+    except Exception as exc:
+        logger.error("Błąd wysyłki Telegram z klawiaturą: %s", exc)
+    return None
+
+
+async def edit_telegram_message(chat_id: int | str, message_id: int, text: str, remove_keyboard: bool = True) -> None:
+    if not TELEGRAM_BOT_TOKEN or not chat_id or not message_id:
+        return
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/editMessageText"
+    payload = {
+        "chat_id": chat_id,
+        "message_id": message_id,
+        "text": text,
+        "parse_mode": "HTML"
+    }
+    if remove_keyboard:
+        payload["reply_markup"] = {"inline_keyboard": []}
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            await client.post(url, json=payload)
+    except Exception as exc:
+        logger.error("Błąd edycji wiadomości Telegram: %s", exc)
+
+
+async def answer_telegram_callback(callback_query_id: str, text: str = "") -> None:
+    if not TELEGRAM_BOT_TOKEN or not callback_query_id:
+        return
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/answerCallbackQuery"
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            await client.post(url, json={"callback_query_id": callback_query_id, "text": text})
+    except Exception as exc:
+        logger.error("Błąd answerCallbackQuery: %s", exc)
+
+
+async def ask_calendar_confirmation(
+    chat_id: int | str,
+    sender: str,
+    events: list[dict],
+    intro_msg: str = ""
+) -> None:
+    if not events:
+        if intro_msg:
+            await reply_telegram(chat_id, intro_msg)
+        return
+
+    cleanup_pending_actions()
+    token = uuid.uuid4().hex[:10]
+    chat_id_str = str(chat_id)
+
+    PENDING_CALENDAR_ACTIONS[token] = {
+        "sender": sender,
+        "chat_id": chat_id_str,
+        "created_at": time.time(),
+        "events": events
+    }
+    LAST_PENDING_PER_CHAT[chat_id_str] = token
+
+    summary = format_events_summary(events)
+    count = len(events)
+
+    msg_lines = []
+    if intro_msg and intro_msg.strip() != "Zrobione!":
+        msg_lines.append(intro_msg.strip())
+        msg_lines.append("")
+
+    if count == 1:
+        msg_lines.append("📋 <b>Wykryto wydarzenie do kalendarza:</b>")
+    else:
+        msg_lines.append(f"📋 <b>Wykryto {count} wydarzeń / terminów:</b>")
+
+    msg_lines.append(summary)
+    msg_lines.append("")
+    msg_lines.append("❓ <i>Czy zatwierdzasz dodanie do kalendarza?</i>")
+    msg_lines.append("<i>(Kliknij przycisk poniżej lub odpisz 'tak' / 'nie')</i>")
+
+    full_text = "\n".join(msg_lines)
+
+    btn_ok = "✅ Zatwierdź i dodaj" if count == 1 else f"✅ Zatwierdź wszystkie ({count})"
+    keyboard = [
+        [
+            {"text": btn_ok, "callback_data": f"cal_ok:{token}"},
+            {"text": "❌ Odrzuć", "callback_data": f"cal_no:{token}"}
+        ]
+    ]
+    await send_telegram_with_keyboard(chat_id, full_text, keyboard)
+
+
+async def handle_calendar_callback(
+    callback_query_id: str,
+    chat_id: int | str,
+    message_id: Optional[int],
+    data: str,
+    user_name: str
+) -> None:
+    if data.startswith("cal_ok:"):
+        token = data.split(":", 1)[1]
+        pending = PENDING_CALENDAR_ACTIONS.pop(token, None)
+        chat_id_str = str(chat_id)
+        if LAST_PENDING_PER_CHAT.get(chat_id_str) == token:
+            LAST_PENDING_PER_CHAT.pop(chat_id_str, None)
+
+        if not pending:
+            await answer_telegram_callback(callback_query_id, "Wpis już przetworzony lub wygasł.")
+            if message_id:
+                await edit_telegram_message(chat_id, message_id, "⚠️ <i>To wydarzenie zostało już wcześniej zatwierdzone lub wygasło.</i>")
+            return
+
+        events = pending.get("events", [])
+        sender = pending.get("sender", user_name)
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            for ev in events:
+                await client.post(
+                    f"{SUPABASE_URL}/rest/v1/home_calendar",
+                    headers=supabase_headers(),
+                    json={
+                        "title": ev.get("title", "Wydarzenie"),
+                        "event_date": ev.get("event_date"),
+                        "event_time": ev.get("event_time", ""),
+                        "category": ev.get("category", "Wspólne"),
+                        "created_by": f"TG ({sender})"
+                    }
+                )
+        await ws_manager.broadcast_refresh("calendar")
+        await answer_telegram_callback(callback_query_id, "Dodano do kalendarza!")
+
+        summary = format_events_summary(events)
+        edit_text = (
+            f"✅ <b>ZATWIERDZONO! Dodano do kalendarza ({user_name}):</b>\n\n"
+            f"{summary}\n\n"
+            f"🔔 <i>Powiadomienia i przypomnienia Telegram zostały zaplanowane.</i>"
+        )
+        if message_id:
+            await edit_telegram_message(chat_id, message_id, edit_text)
+        else:
+            await reply_telegram(chat_id, edit_text)
+
+    elif data.startswith("cal_no:"):
+        token = data.split(":", 1)[1]
+        PENDING_CALENDAR_ACTIONS.pop(token, None)
+        chat_id_str = str(chat_id)
+        if LAST_PENDING_PER_CHAT.get(chat_id_str) == token:
+            LAST_PENDING_PER_CHAT.pop(chat_id_str, None)
+
+        await answer_telegram_callback(callback_query_id, "Anulowano.")
+        edit_text = f"❌ <b>Odrzucono dodawanie ({user_name}).</b>\nŻadne wydarzenia nie zostały zapisane w kalendarzu."
+        if message_id:
+            await edit_telegram_message(chat_id, message_id, edit_text)
+        else:
+            await reply_telegram(chat_id, edit_text)
+
+
 async def run_gemini_agent(
     user_prompt: str,
     sender: str,
     media_parts: Optional[list] = None
-) -> tuple[str, bool]:
+) -> tuple[str, bool, list[dict]]:
     """Wywołuje Agenta Gemini (gemini-3.5-flash) z kontekstem aktualnego stanu domu.
-    Wykonuje akcje na bazie Supabase (zakupy, kalendarz, odznaczanie kupionych).
-    Zwraca (odpowiedź_dla_użytkownika, czy_sukces).
+    Wykonuje bezpośrednie akcje na liście zakupów, a propozycje wydarzeń kalendarza
+    zwraca do zatwierdzenia przez domownika.
+    Zwraca (odpowiedź_dla_użytkownika, czy_sukces, lista_oczekujących_wydarzeń).
     """
     if not GEMINI_API_KEY:
-        return "", False
+        return "", False, []
 
     today_str = str(datetime.date.today())
     now_time = datetime.datetime.now().strftime("%H:%M")
@@ -800,10 +999,13 @@ ZASADY DZIAŁANIA:
 1. Rozpoznawaj intencje użytkownika (zakupy, kalendarz, wywóz śmieci, skreślanie kupionych rzeczy, pytania kulinarne, domowe).
 2. Jeśli użytkownik dodaje zakupy, użyj 'add_shopping' z nazwami i ilościami (np. 2 mleka, 5 jajek).
 3. Jeśli użytkownik mówi, że coś kupił (np. 'kupiłem mleko', 'skreśl chleb'), użyj 'complete_shopping' z nazwami kupionych rzeczy.
-4. Jeśli użytkownik dodaje wydarzenie lub termin (np. dentysta, wizyta, urodziny, wywóz plastiku/bio), użyj 'add_calendar'.
-   - Kategoria musi być jedną z: 'Bartosz', 'Daria', 'Wspólne', 'Śmieci'.
-   - Jeśli to śmieci/odpady -> kategoria 'Śmieci'.
+4. Jeśli użytkownik dodaje wydarzenie, wizytę, spotkanie lub terminy wywozu śmieci (z tekstu, ze zdjęcia harmonogramu lub z notatki głosowej):
+   - Użyj akcji 'add_calendar'.
+   - Wypełnij 'calendar_event' (dla 1 terminu) lub 'calendar_events' (gdy jest ich kilka, np. z harmonogramu odpadów).
+   - Kategoria musi być dokładnie jedną z: 'Bartosz', 'Daria', 'Wspólne', 'Śmieci'.
+   - Jeśli dotyczy śmieci/odpadów -> kategoria 'Śmieci'.
    - Jeśli z kontekstu to sprawa żony -> 'Daria'. Jeśli męża -> 'Bartosz'. W przeciwnym razie -> 'Wspólne'.
+   - WAŻNE: Każde wydarzenie w kalendarzu będzie wymagało weryfikacji i zatwierdzenia przez domownika. Dlatego w polu 'reply' potwierdź odczytanie terminów i zaznacz, że prosisz o zatwierdzenie.
 5. W polu 'reply' napisz naturalną, życzliwą, zwięzłą odpowiedź po polsku dla domownika (używaj emoji).
 """
 
@@ -846,6 +1048,19 @@ ZASADY DZIAŁANIA:
                                 },
                                 "required": ["title", "event_date", "category"]
                             },
+                            "calendar_events": {
+                                "type": "ARRAY",
+                                "items": {
+                                    "type": "OBJECT",
+                                    "properties": {
+                                        "title": {"type": "STRING"},
+                                        "event_date": {"type": "STRING"},
+                                        "event_time": {"type": "STRING"},
+                                        "category": {"type": "STRING", "enum": ["Bartosz", "Daria", "Wspólne", "Śmieci"]}
+                                    },
+                                    "required": ["title", "event_date", "category"]
+                                }
+                            },
                             "delete_calendar_query": {"type": "STRING"}
                         },
                         "required": ["action"]
@@ -881,7 +1096,7 @@ ZASADY DZIAŁANIA:
 
             if not resp or resp.status_code != 200:
                 logger.error("Błąd odpowiedzi Gemini (%s): %s", resp.status_code if resp else "None", resp.text if resp else "")
-                return "", False
+                return "", False, []
 
             data = resp.json()
             raw_json = data["candidates"][0]["content"]["parts"][0]["text"]
@@ -892,6 +1107,7 @@ ZASADY DZIAŁANIA:
 
             refresh_shopping = False
             refresh_calendar = False
+            proposed_calendar_events = []
 
             for act in actions:
                 action_type = act.get("action")
@@ -917,20 +1133,15 @@ ZASADY DZIAŁANIA:
                         )
                         refresh_shopping = True
 
-                elif action_type == "add_calendar" and act.get("calendar_event"):
-                    ev = act["calendar_event"]
-                    await client.post(
-                        f"{SUPABASE_URL}/rest/v1/home_calendar",
-                        headers=supabase_headers(),
-                        json={
-                            "title": ev.get("title", "Wydarzenie"),
-                            "event_date": ev.get("event_date", today_str),
-                            "event_time": ev.get("event_time", ""),
-                            "category": ev.get("category", "Wspólne"),
-                            "created_by": f"AI: {sender}"
-                        }
-                    )
-                    refresh_calendar = True
+                elif action_type == "add_calendar":
+                    if act.get("calendar_event"):
+                        ev_item = act["calendar_event"]
+                        if ev_item.get("title") and ev_item.get("event_date"):
+                            proposed_calendar_events.append(ev_item)
+                    if act.get("calendar_events"):
+                        for ev_item in act["calendar_events"]:
+                            if ev_item.get("title") and ev_item.get("event_date"):
+                                proposed_calendar_events.append(ev_item)
 
                 elif action_type == "delete_calendar" and act.get("delete_calendar_query"):
                     query = act["delete_calendar_query"].strip()
@@ -945,16 +1156,31 @@ ZASADY DZIAŁANIA:
             if refresh_calendar:
                 await ws_manager.broadcast_refresh("calendar")
 
-            return reply_text, True
+            return reply_text, True, proposed_calendar_events
 
     except Exception as exc:
         logger.error("Błąd wykonania Agenta Gemini: %s", exc)
-        return "", False
+        return "", False, []
 
 
 # --- TELEGRAM WEBHOOK ---
 @app.post("/api/webhook/telegram")
 async def telegram_webhook(update: dict):
+    # 0. Obsługa kliknięć w przyciski Inline (callback_query)
+    if "callback_query" in update:
+        cq = update["callback_query"]
+        cq_id = str(cq.get("id", ""))
+        data = str(cq.get("data", ""))
+        msg = cq.get("message", {})
+        chat_id = msg.get("chat", {}).get("id")
+        message_id = msg.get("message_id")
+        from_user = cq.get("from", {})
+        from_id_str = str(from_user.get("id", ""))
+        user_name = "Daria" if from_id_str == WIFE_TELEGRAM_ID else "Bartosz"
+
+        await handle_calendar_callback(cq_id, chat_id, message_id, data, user_name)
+        return {"ok": True}
+
     message = update.get("message", {})
     chat_id = message.get("chat", {}).get("id")
 
@@ -992,6 +1218,42 @@ async def telegram_webhook(update: dict):
 
     logger.info("Odebrano Telegram od %s (user %s, chat %s): text=%s, photo=%s, voice=%s", sender, user_id_str, chat_id, bool(text), bool(photo), bool(voice))
 
+    # Sprawdzenie czy użytkownik odpowiada tekstowo na oczekujące zatwierdzenie kalendarza
+    clean_text = text.lower().strip()
+    last_token = LAST_PENDING_PER_CHAT.get(chat_id_str)
+    if last_token and last_token in PENDING_CALENDAR_ACTIONS:
+        if clean_text in ["tak", "zatwierdź", "zatwierdz", "dodaj", "ok", "jasne", "potwierdzam", "zapisz", "pewnie", "tak jest"]:
+            pending = PENDING_CALENDAR_ACTIONS.pop(last_token, None)
+            LAST_PENDING_PER_CHAT.pop(chat_id_str, None)
+            if pending:
+                events = pending.get("events", [])
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    for ev in events:
+                        await client.post(
+                            f"{SUPABASE_URL}/rest/v1/home_calendar",
+                            headers=supabase_headers(),
+                            json={
+                                "title": ev.get("title", "Wydarzenie"),
+                                "event_date": ev.get("event_date"),
+                                "event_time": ev.get("event_time", ""),
+                                "category": ev.get("category", "Wspólne"),
+                                "created_by": f"TG ({sender})"
+                            }
+                        )
+                await ws_manager.broadcast_refresh("calendar")
+                summary = format_events_summary(events)
+                await reply_telegram(
+                    chat_id,
+                    f"✅ <b>ZATWIERDZONO! Dodano do kalendarza ({sender}):</b>\n\n{summary}\n\n🔔 <i>Powiadomienia i przypomnienia Telegram zostały zaplanowane.</i>"
+                )
+                return {"ok": True}
+
+        elif clean_text in ["nie", "anuluj", "odrzuć", "odrzuc", "skasuj", "nie dodawaj", "stop", "wstrzymaj"]:
+            PENDING_CALENDAR_ACTIONS.pop(last_token, None)
+            LAST_PENDING_PER_CHAT.pop(chat_id_str, None)
+            await reply_telegram(chat_id, f"❌ <b>Odrzucono dodawanie ({sender}).</b>\nŻadne wydarzenia nie zostały zapisane w kalendarzu.")
+            return {"ok": True}
+
     # 1. Obsługa zdjęć (Multimodal - lodówka, paragon, harmonogram śmieci z kartki)
     if photo:
         file_id = photo[-1]["file_id"]
@@ -1000,9 +1262,12 @@ async def telegram_webhook(update: dict):
             b64_img = base64.b64encode(content).decode("utf-8")
             media_parts = [{"inline_data": {"mime_type": "image/jpeg", "data": b64_img}}]
             prompt = caption or "Przeanalizuj to zdjęcie. Jeśli to lista zakupów lub paragon/lodówka - dodaj brakujące produkty. Jeśli to harmonogram śmieci - dodaj terminy do kalendarza."
-            reply, success = await run_gemini_agent(prompt, sender, media_parts)
-            if success and reply:
-                await reply_telegram(chat_id, reply)
+            reply, success, pending_events = await run_gemini_agent(prompt, sender, media_parts)
+            if success:
+                if pending_events:
+                    await ask_calendar_confirmation(chat_id, sender, pending_events, intro_msg=reply)
+                elif reply:
+                    await reply_telegram(chat_id, reply)
                 return {"ok": True}
 
     # 2. Obsługa notatek głosowych (Voice notes)
@@ -1012,9 +1277,12 @@ async def telegram_webhook(update: dict):
         if content:
             b64_audio = base64.b64encode(content).decode("utf-8")
             media_parts = [{"inline_data": {"mime_type": "audio/ogg", "data": b64_audio}}]
-            reply, success = await run_gemini_agent("Wiadomość głosowa. Wykonaj dyspozycje domownika.", sender, media_parts)
-            if success and reply:
-                await reply_telegram(chat_id, reply)
+            reply, success, pending_events = await run_gemini_agent("Wiadomość głosowa. Wykonaj dyspozycje domownika.", sender, media_parts)
+            if success:
+                if pending_events:
+                    await ask_calendar_confirmation(chat_id, sender, pending_events, intro_msg=reply)
+                elif reply:
+                    await reply_telegram(chat_id, reply)
                 return {"ok": True}
 
     # 3. Komendy systemowe / pomoc
@@ -1065,7 +1333,7 @@ async def telegram_webhook(update: dict):
         if not events:
             await reply_telegram(chat_id, "📅 <b>Kalendarz jest pusty!</b> Brak nadchodzących wydarzeń.")
         else:
-            cat_icons = {"Bartosz": "🧔", "Daria": "👩", "Wspólne": "🏡", "Śmieci": "🗑️"}
+            cat_icons = {"Bartosz": "🧔", "Daria": "🌸", "Wspólne": "🏡", "Śmieci": "🗑️"}
             lines = ["📅 <b>Nadchodzące wydarzenia i terminy:</b>"]
             for ev in events:
                 icon = cat_icons.get(ev.get("category", "Wspólne"), "📌")
@@ -1075,9 +1343,12 @@ async def telegram_webhook(update: dict):
         return {"ok": True}
 
     # 5. GŁÓWNY SILNIK: AGENT AI GEMINI 3.5 FLASH
-    reply, success = await run_gemini_agent(text, sender)
-    if success and reply:
-        await reply_telegram(chat_id, reply)
+    reply, success, pending_events = await run_gemini_agent(text, sender)
+    if success:
+        if pending_events:
+            await ask_calendar_confirmation(chat_id, sender, pending_events, intro_msg=reply)
+        elif reply:
+            await reply_telegram(chat_id, reply)
         return {"ok": True}
 
     # 6. AWARYJNY FALLBACK (gdyby Gemini nie odpowiedział)
@@ -1087,23 +1358,13 @@ async def telegram_webhook(update: dict):
     ])
     if is_calendar_add:
         title, ev_date, ev_time, cat = parse_calendar_input(text, sender)
-        url = f"{SUPABASE_URL}/rest/v1/home_calendar"
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            await client.post(url, headers=supabase_headers(), json={
-                "title": title,
-                "event_date": ev_date,
-                "event_time": ev_time,
-                "category": cat,
-                "created_by": f"TG: {sender}"
-            })
-        await ws_manager.broadcast_refresh("calendar")
-        cat_icons = {"Bartosz": "🧔", "Daria": "👩", "Wspólne": "🏡", "Śmieci": "🗑️"}
-        icon = cat_icons.get(cat, "📌")
-        time_txt = f" o godz. {ev_time}" if ev_time else ""
-        await reply_telegram(
-            chat_id,
-            f"📅 <b>Dodano do kalendarza ({sender}):</b>\n• {icon} <b>{title}</b>\n• Data: <b>{ev_date}{time_txt}</b>\n• Kategoria: <b>{cat}</b>"
-        )
+        pending_events = [{
+            "title": title,
+            "event_date": ev_date,
+            "event_time": ev_time,
+            "category": cat
+        }]
+        await ask_calendar_confirmation(chat_id, sender, pending_events)
         return {"ok": True}
 
     parsed_items = split_and_parse_shopping(text)
