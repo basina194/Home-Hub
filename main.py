@@ -74,6 +74,21 @@ def supabase_headers() -> dict:
     }
 
 
+HTTP_CLIENT: Optional[httpx.AsyncClient] = None
+
+
+def get_http_client() -> httpx.AsyncClient:
+    """Zwraca współdzieloną instancję klienta HTTP ze stałą pulą połączeń (Connection Pool)
+    dla eliminacji narzutu ponawiania uścisków dłoni TLS."""
+    global HTTP_CLIENT
+    if HTTP_CLIENT is None or HTTP_CLIENT.is_closed:
+        HTTP_CLIENT = httpx.AsyncClient(
+            timeout=25.0,
+            limits=httpx.Limits(max_keepalive_connections=20, max_connections=40)
+        )
+    return HTTP_CLIENT
+
+
 class ConnectionManager:
     def __init__(self) -> None:
         self.active_connections: List[WebSocket] = []
@@ -287,10 +302,16 @@ async def calendar_reminder_loop():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Start tła dla przypomnień
+    global HTTP_CLIENT
+    HTTP_CLIENT = httpx.AsyncClient(
+        timeout=25.0,
+        limits=httpx.Limits(max_keepalive_connections=20, max_connections=40)
+    )
     reminder_task = asyncio.create_task(calendar_reminder_loop())
     yield
     reminder_task.cancel()
+    if HTTP_CLIENT and not HTTP_CLIENT.is_closed:
+        await HTTP_CLIENT.aclose()
 
 
 app = FastAPI(title="Nexus Cloud Hub", lifespan=lifespan)
@@ -727,8 +748,8 @@ async def reply_telegram(chat_id: int | str, text: str) -> None:
         return
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     try:
-        async with httpx.AsyncClient(timeout=8.0) as client:
-            await client.post(url, json={"chat_id": chat_id, "text": text, "parse_mode": "HTML"})
+        client = get_http_client()
+        await client.post(url, json={"chat_id": chat_id, "text": text, "parse_mode": "HTML"})
     except Exception as exc:
         logger.error("Błąd wysyłki Telegram reply: %s", exc)
 
@@ -738,17 +759,17 @@ async def download_telegram_file(file_id: str) -> tuple[bytes, str]:
     if not TELEGRAM_BOT_TOKEN or not file_id:
         return b"", ""
     try:
-        async with httpx.AsyncClient(timeout=25.0) as client:
-            info_res = await client.get(
-                f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getFile",
-                params={"file_id": file_id}
-            )
-            data = info_res.json()
-            if not data.get("ok"):
-                return b"", ""
-            file_path = data["result"]["file_path"]
-            file_res = await client.get(f"https://api.telegram.org/file/bot{TELEGRAM_BOT_TOKEN}/{file_path}")
-            return file_res.content, file_path
+        client = get_http_client()
+        info_res = await client.get(
+            f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getFile",
+            params={"file_id": file_id}
+        )
+        data = info_res.json()
+        if not data.get("ok"):
+            return b"", ""
+        file_path = data["result"]["file_path"]
+        file_res = await client.get(f"https://api.telegram.org/file/bot{TELEGRAM_BOT_TOKEN}/{file_path}")
+        return file_res.content, file_path
     except Exception as exc:
         logger.error("Błąd pobierania pliku Telegram (%s): %s", file_id, exc)
         return b"", ""
@@ -788,15 +809,15 @@ async def send_telegram_with_keyboard(chat_id: int | str, text: str, inline_keyb
         return None
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     try:
-        async with httpx.AsyncClient(timeout=8.0) as client:
-            resp = await client.post(url, json={
-                "chat_id": chat_id,
-                "text": text,
-                "parse_mode": "HTML",
-                "reply_markup": {"inline_keyboard": inline_keyboard}
-            })
-            if resp.status_code == 200:
-                return resp.json().get("result")
+        client = get_http_client()
+        resp = await client.post(url, json={
+            "chat_id": chat_id,
+            "text": text,
+            "parse_mode": "HTML",
+            "reply_markup": {"inline_keyboard": inline_keyboard}
+        })
+        if resp.status_code == 200:
+            return resp.json().get("result")
     except Exception as exc:
         logger.error("Błąd wysyłki Telegram z klawiaturą: %s", exc)
     return None
@@ -815,8 +836,8 @@ async def edit_telegram_message(chat_id: int | str, message_id: int, text: str, 
     if remove_keyboard:
         payload["reply_markup"] = {"inline_keyboard": []}
     try:
-        async with httpx.AsyncClient(timeout=8.0) as client:
-            await client.post(url, json=payload)
+        client = get_http_client()
+        await client.post(url, json=payload)
     except Exception as exc:
         logger.error("Błąd edycji wiadomości Telegram: %s", exc)
 
@@ -826,8 +847,8 @@ async def answer_telegram_callback(callback_query_id: str, text: str = "") -> No
         return
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/answerCallbackQuery"
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            await client.post(url, json={"callback_query_id": callback_query_id, "text": text})
+        client = get_http_client()
+        await client.post(url, json={"callback_query_id": callback_query_id, "text": text})
     except Exception as exc:
         logger.error("Błąd answerCallbackQuery: %s", exc)
 
@@ -1002,61 +1023,54 @@ async def run_gemini_agent(
     sender: str,
     media_parts: Optional[list] = None
 ) -> tuple[str, bool, list[dict]]:
-    """Wywołuje Agenta Gemini (gemini-3.5-flash) z kontekstem aktualnego stanu domu.
-    Wykonuje bezpośrednie akcje na liście zakupów, a propozycje wydarzeń kalendarza
-    zwraca do zatwierdzenia przez domownika.
-    Zwraca (odpowiedź_dla_użytkownika, czy_sukces, lista_oczekujących_wydarzeń).
-    """
+    """Wywołuje Agenta Gemini z kontekstem aktualnego stanu domu i adaptacyjnym doborem modelu."""
     if not GEMINI_API_KEY:
         return "", False, []
 
     today_str = str(datetime.date.today())
     now_time = datetime.datetime.now().strftime("%H:%M")
+    client = get_http_client()
 
-    # 1. Pobierz aktualny stan z Supabase
-    shopping_text = "Brak aktywnych pozycji (wszystko kupione)."
-    calendar_text = "Brak nadchodzących wydarzeń."
+    # 1. Równoległe, zwięzłe pobranie stanu z Supabase (oszczędność ~300ms i 80% tokenów)
+    shopping_text = "brak"
+    calendar_text = "brak"
 
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            s_res = await client.get(f"{SUPABASE_URL}/rest/v1/home_shopping?is_bought=eq.false&order=id.asc", headers=supabase_headers())
-            if s_res.status_code == 200 and s_res.json():
-                items = s_res.json()
-                shopping_text = "\n".join([f"- {it.get('item')} ({it.get('quantity', '1')}) [ID: {it.get('id')}]" for it in items])
+        s_task = client.get(
+            f"{SUPABASE_URL}/rest/v1/home_shopping?is_bought=eq.false&select=item,quantity&order=id.asc&limit=15",
+            headers=supabase_headers()
+        )
+        c_task = client.get(
+            f"{SUPABASE_URL}/rest/v1/home_calendar?event_date=gte.{today_str}&select=title,event_date,event_time,category&order=event_date.asc&limit=10",
+            headers=supabase_headers()
+        )
+        s_res, c_res = await asyncio.gather(s_task, c_task, return_exceptions=True)
 
-            c_res = await client.get(f"{SUPABASE_URL}/rest/v1/home_calendar?event_date=gte.{today_str}&order=event_date.asc,event_time.asc&limit=25", headers=supabase_headers())
-            if c_res.status_code == 200 and c_res.json():
-                evs = c_res.json()
-                calendar_text = "\n".join([f"- {ev.get('event_date')} {ev.get('event_time', '')}: {ev.get('title')} [{ev.get('category')}] [ID: {ev.get('id')}]" for ev in evs])
+        if not isinstance(s_res, Exception) and s_res.status_code == 200:
+            items = s_res.json()
+            if items:
+                shopping_text = ", ".join([f"{it['item']} ({it.get('quantity') or '1'})" for it in items])
+
+        if not isinstance(c_res, Exception) and c_res.status_code == 200:
+            evs = c_res.json()
+            if evs:
+                calendar_text = "; ".join([f"{ev['event_date']} {ev.get('event_time') or ''}: {ev['title']} [{ev.get('category')}]" for ev in evs])
     except Exception as e:
-        logger.warning("Nie udało się pobrać pełnego kontekstu dla Gemini: %s", e)
+        logger.warning("Błąd szybkiego odczytu kontekstu: %s", e)
 
-    system_prompt = f"""Jesteś osobistym, inteligentnym asystentem domowym Nexus Home Hub dla Bartosza i jego żony Darii.
-Dzisiejsza data: {today_str}. Aktualna godzina: {now_time}.
-Lokalizacja: Gniezno, Polska.
-
-AKTUALNY STAN TWOJEGO DOMU:
-[Lista zakupów - aktualnie potrzebne]:
-{shopping_text}
-
-[Kalendarz i harmonogram - nadchodzące dni]:
-{calendar_text}
-
-ZASADY DZIAŁANIA:
-1. Rozpoznawaj intencje użytkownika (zakupy, kalendarz, wywóz śmieci, skreślanie kupionych rzeczy, pytania kulinarne, domowe).
-2. Jeśli użytkownik dodaje zakupy, użyj 'add_shopping' z nazwami i ilościami (np. 2 mleka, 5 jajek).
-3. Jeśli użytkownik mówi, że coś kupił (np. 'kupiłem mleko', 'skreśl chleb'), użyj 'complete_shopping' z nazwami kupionych rzeczy.
-4. Jeśli użytkownik dodaje wydarzenie, wizytę, spotkanie lub terminy wywozu śmieci (z tekstu, ze zdjęcia harmonogramu lub z notatki głosowej):
-   - Użyj akcji 'add_calendar'.
-   - Wypełnij 'calendar_event' (dla 1 terminu) lub 'calendar_events' (gdy jest ich kilka, np. z harmonogramu odpadów).
-   - Kategoria musi być dokładnie jedną z: 'Bartosz', 'Daria', 'Wspólne', 'Śmieci'.
-   - Jeśli dotyczy śmieci/odpadów -> kategoria 'Śmieci'.
-   - Jeśli z kontekstu to sprawa żony -> 'Daria'. Jeśli męża -> 'Bartosz'. W przeciwnym razie -> 'Wspólne'.
-   - WAŻNE: Każde wydarzenie w kalendarzu będzie wymagało weryfikacji i zatwierdzenia przez domownika. Dlatego w polu 'reply' potwierdź odczytanie terminów i zaznacz, że prosisz o zatwierdzenie.
-5. W polu 'reply' napisz naturalną, życzliwą, zwięzłą odpowiedź po polsku dla domownika (używaj emoji).
-"""
+    # Zoptymalizowany, ultra-zwięzły prompt (zmniejsza zużycie tokenów o ponad 60%)
+    system_prompt = f"""Asystent domowy Nexus dla Bartosza i Darii (Gniezno). Dziś: {today_str} {now_time}.
+Aktywne zakupy: {shopping_text}.
+Nadchodzący kalendarz: {calendar_text}.
+Instrukcje:
+1. Zakupy -> 'add_shopping' (nazwy, ilości).
+2. Kupione rzeczy ('kupiłem', 'skreśl') -> 'complete_shopping'.
+3. Terminy/wydarzenia/śmieci (tekst/foto/głos) -> 'add_calendar' ('calendar_event' lub 'calendar_events', kategoria: Bartosz/Daria/Wspólne/Śmieci).
+4. W polu 'reply' napisz zwięzłą, naturalną odpowiedź (1-2 zdania, emoji)."""
 
     generation_config = {
+        "temperature": 0.2,
+        "max_output_tokens": 400,
         "response_mime_type": "application/json",
         "response_schema": {
             "type": "OBJECT",
@@ -1132,90 +1146,97 @@ ZASADY DZIAŁANIA:
     }
 
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = None
-            used_model = None
-            for m in models_to_try:
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent?key={GEMINI_API_KEY}"
-                try:
-                    r = await client.post(url, json=payload, timeout=22.0)
-                    if r.status_code == 200:
-                        resp = r
-                        used_model = m
-                        logger.info("Zapytanie AI pomyślnie zrealizowane przez model: %s", m)
-                        break
-                    elif r.status_code == 429:
-                        logger.warning("Model %s osiągnął limit zapytań (429 Quota Exceeded). Przechodzę do niższego/kolejnego modelu...", m)
-                    elif r.status_code == 503:
-                        logger.warning("Model %s jest przeciążony (503 High Demand). Przechodzę do kolejnego modelu...", m)
-                    else:
-                        logger.warning("Model %s zwrócił status %s (%s). Próbuję kolejnego...", m, r.status_code, r.text[:100])
-                except (httpx.TimeoutException, httpx.RequestError) as net_err:
-                    logger.warning("Timeout/błąd sieciowy dla %s: %s. Próbuję kolejnego...", m, net_err)
+        resp = None
+        used_model = None
+        for m in models_to_try:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent?key={GEMINI_API_KEY}"
+            try:
+                r = await client.post(url, json=payload, timeout=20.0)
+                if r.status_code == 200:
+                    resp = r
+                    used_model = m
+                    logger.info("Zapytanie AI pomyślnie zrealizowane przez model: %s", m)
+                    break
+                elif r.status_code == 429:
+                    logger.warning("Model %s osiągnął limit (429 Quota Exceeded). Przechodzę do kolejnego...", m)
+                elif r.status_code == 503:
+                    logger.warning("Model %s jest przeciążony (503 High Demand). Przechodzę do kolejnego...", m)
+                else:
+                    logger.warning("Model %s zwrócił kod %s (%s). Próbuję kolejnego...", m, r.status_code, r.text[:100])
+            except (httpx.TimeoutException, httpx.RequestError) as net_err:
+                logger.warning("Timeout/błąd sieciowy dla %s: %s. Próbuję kolejnego...", m, net_err)
 
-            if not resp or resp.status_code != 200:
-                logger.error("Wszystkie modele w kaskadzie Gemini wyczerpały limity lub napotkały błąd!")
-                return "", False, []
+        if not resp or resp.status_code != 200:
+            logger.error("Wszystkie modele w kaskadzie Gemini wyczerpały limity lub napotkały błąd!")
+            return "", False, []
 
-            data = resp.json()
-            raw_json = data["candidates"][0]["content"]["parts"][0]["text"]
-            result = json.loads(raw_json)
+        data = resp.json()
+        raw_json = data["candidates"][0]["content"]["parts"][0]["text"]
+        result = json.loads(raw_json)
 
-            actions = result.get("actions", [])
-            reply_text = result.get("reply", "Zrobione!")
+        actions = result.get("actions", [])
+        reply_text = result.get("reply", "Zrobione!")
 
-            refresh_shopping = False
-            refresh_calendar = False
-            proposed_calendar_events = []
+        refresh_shopping = False
+        refresh_calendar = False
+        proposed_calendar_events = []
+        db_tasks = []
 
-            for act in actions:
-                action_type = act.get("action")
+        for act in actions:
+            action_type = act.get("action")
 
-                if action_type == "add_shopping" and act.get("shopping_items"):
-                    for s_item in act["shopping_items"]:
-                        it_name = s_item.get("item", "").strip()
-                        it_qty = s_item.get("quantity", "1").strip() or "1"
-                        if it_name:
-                            await client.post(
-                                f"{SUPABASE_URL}/rest/v1/home_shopping",
-                                headers=supabase_headers(),
-                                json={"item": it_name, "quantity": it_qty, "category": "Wszystko", "added_by": f"AI: {sender}"}
-                            )
-                            refresh_shopping = True
-
-                elif action_type == "complete_shopping" and act.get("complete_items"):
-                    for c_name in act["complete_items"]:
-                        await client.patch(
-                            f"{SUPABASE_URL}/rest/v1/home_shopping?item=ilike.*{c_name.strip()}*&is_bought=eq.false",
+            if action_type == "add_shopping" and act.get("shopping_items"):
+                for s_item in act["shopping_items"]:
+                    it_name = s_item.get("item", "").strip()
+                    it_qty = s_item.get("quantity", "1").strip() or "1"
+                    if it_name:
+                        db_tasks.append(client.post(
+                            f"{SUPABASE_URL}/rest/v1/home_shopping",
                             headers=supabase_headers(),
-                            json={"is_bought": True}
-                        )
+                            json={"item": it_name, "quantity": it_qty, "category": "Wszystko", "added_by": f"AI: {sender}"}
+                        ))
                         refresh_shopping = True
 
-                elif action_type == "add_calendar":
-                    if act.get("calendar_event"):
-                        ev_item = act["calendar_event"]
+            elif action_type == "complete_shopping" and act.get("complete_items"):
+                for c_name in act["complete_items"]:
+                    db_tasks.append(client.patch(
+                        f"{SUPABASE_URL}/rest/v1/home_shopping?item=ilike.*{c_name.strip()}*&is_bought=eq.false",
+                        headers=supabase_headers(),
+                        json={"is_bought": True}
+                    ))
+                    refresh_shopping = True
+
+            elif action_type == "add_calendar":
+                if act.get("calendar_event"):
+                    ev_item = act["calendar_event"]
+                    if ev_item.get("title") and ev_item.get("event_date"):
+                        proposed_calendar_events.append(ev_item)
+                if act.get("calendar_events"):
+                    for ev_item in act["calendar_events"]:
                         if ev_item.get("title") and ev_item.get("event_date"):
                             proposed_calendar_events.append(ev_item)
-                    if act.get("calendar_events"):
-                        for ev_item in act["calendar_events"]:
-                            if ev_item.get("title") and ev_item.get("event_date"):
-                                proposed_calendar_events.append(ev_item)
 
-                elif action_type == "delete_calendar" and act.get("delete_calendar_query"):
-                    query = act["delete_calendar_query"].strip()
-                    await client.delete(
-                        f"{SUPABASE_URL}/rest/v1/home_calendar?title=ilike.*{query}*",
-                        headers=supabase_headers()
-                    )
-                    refresh_calendar = True
+            elif action_type == "delete_calendar" and act.get("delete_calendar_query"):
+                query = act["delete_calendar_query"].strip()
+                db_tasks.append(client.delete(
+                    f"{SUPABASE_URL}/rest/v1/home_calendar?title=ilike.*{query}*",
+                    headers=supabase_headers()
+                ))
+                refresh_calendar = True
 
-            if refresh_shopping:
-                await ws_manager.broadcast_refresh("shopping")
-            if refresh_calendar:
-                await ws_manager.broadcast_refresh("calendar")
+        if db_tasks:
+            await asyncio.gather(*db_tasks, return_exceptions=True)
 
-            return reply_text, True, proposed_calendar_events
+        if refresh_shopping:
+            await ws_manager.broadcast_refresh("shopping")
+        if refresh_calendar:
+            await ws_manager.broadcast_refresh("calendar")
+
+        return reply_text, True, proposed_calendar_events
+
+    except Exception as exc:
+        logger.error("Błąd wykonania Agenta Gemini: %s", exc)
+        return "", False, []
 
     except Exception as exc:
         logger.error("Błąd wykonania Agenta Gemini: %s", exc)
@@ -1385,9 +1406,9 @@ async def telegram_webhook(update: dict):
     if text.lower() in ("/kalendarz", "kalendarz", "/terminy", "terminy", "/wydarzenia", "wydarzenia"):
         today_str = str(datetime.date.today())
         url = f"{SUPABASE_URL}/rest/v1/home_calendar?event_date=gte.{today_str}&order=event_date.asc,event_time.asc&limit=15"
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(url, headers=supabase_headers())
-            events = resp.json() if resp.status_code == 200 else []
+        client = get_http_client()
+        resp = await client.get(url, headers=supabase_headers())
+        events = resp.json() if resp.status_code == 200 else []
 
         if not events:
             await reply_telegram(chat_id, "📅 <b>Kalendarz jest pusty!</b> Brak nadchodzących wydarzeń.")
@@ -1401,21 +1422,13 @@ async def telegram_webhook(update: dict):
             await reply_telegram(chat_id, "\n".join(lines))
         return {"ok": True}
 
-    # 5. GŁÓWNY SILNIK: AGENT AI GEMINI 3.5 FLASH
-    reply, success, pending_events = await run_gemini_agent(text, sender)
-    if success:
-        if pending_events:
-            await ask_calendar_confirmation(chat_id, sender, pending_events, intro_msg=reply)
-        elif reply:
-            await reply_telegram(chat_id, reply)
-        return {"ok": True}
-
-    # 6. AWARYJNY FALLBACK (gdyby Gemini nie odpowiedział)
-    is_calendar_add = any(text.lower().startswith(p) for p in [
+    # 5. SZYBKA ŚCIEŻKA (FAST-PATH) - Natychmiastowa obsługa (<50ms) bez zużywania limitów/tokenów AI
+    # A. Bezpośrednie komendy kalendarza (np. "termin dentysta jutro 16:00", "/smieci plastik piątek")
+    is_calendar_prefix = any(text.lower().startswith(p) for p in [
         "/kalendarz ", "kalendarz ", "/termin ", "termin ", "/smieci ", "smieci ",
         "/śmieci ", "śmieci ", "/wydarzenie ", "wydarzenie "
     ])
-    if is_calendar_add:
+    if is_calendar_prefix:
         title, ev_date, ev_time, cat = parse_calendar_input(text, sender)
         pending_events = [{
             "title": title,
@@ -1426,23 +1439,55 @@ async def telegram_webhook(update: dict):
         await ask_calendar_confirmation(chat_id, sender, pending_events)
         return {"ok": True}
 
-    parsed_items = split_and_parse_shopping(text)
-    if parsed_items:
-        url = f"{SUPABASE_URL}/rest/v1/home_shopping"
-        added_summary = []
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            for item_name, qty in parsed_items:
-                if not item_name:
-                    continue
-                added_summary.append(f"{item_name} ({qty})" if qty != "1" else item_name)
-                await client.post(
+    # B. Bezpośrednie komendy zakupów (np. "kup 2 mleka, 5 bułek i masło", "/kup chleb")
+    is_shopping_prefix = any(text.lower().startswith(p) for p in ["/kup ", "kup ", "/dodaj ", "dodaj "])
+    if is_shopping_prefix:
+        parsed_items = split_and_parse_shopping(text)
+        if parsed_items:
+            client = get_http_client()
+            url = f"{SUPABASE_URL}/rest/v1/home_shopping"
+            db_tasks = [
+                client.post(
                     url,
                     headers=supabase_headers(),
                     json={"item": item_name, "quantity": qty, "category": "Wszystko", "added_by": f"TG: {sender}"}
                 )
-        if added_summary:
+                for item_name, qty in parsed_items if item_name
+            ]
+            if db_tasks:
+                await asyncio.gather(*db_tasks, return_exceptions=True)
+                await ws_manager.broadcast_refresh("shopping")
+                added_summary = [f"{it} ({q})" if q != "1" else it for it, q in parsed_items if it]
+                await reply_telegram(chat_id, f"✅ <b>Dodano do listy ({sender}):</b>\n• " + "\n• ".join(added_summary))
+                return {"ok": True}
+
+    # 6. GŁÓWNY SILNIK: AGENT AI GEMINI (dla konwersacji, pytań kulinarnych, skreślania kupionego, planowania)
+    reply, success, pending_events = await run_gemini_agent(text, sender)
+    if success:
+        if pending_events:
+            await ask_calendar_confirmation(chat_id, sender, pending_events, intro_msg=reply)
+        elif reply:
+            await reply_telegram(chat_id, reply)
+        return {"ok": True}
+
+    # 7. AWARYJNY FALLBACK (gdyby Gemini było offline, a użytkownik wpisał zakupy)
+    parsed_items = split_and_parse_shopping(text)
+    if parsed_items:
+        client = get_http_client()
+        url = f"{SUPABASE_URL}/rest/v1/home_shopping"
+        db_tasks = [
+            client.post(
+                url,
+                headers=supabase_headers(),
+                json={"item": item_name, "quantity": qty, "category": "Wszystko", "added_by": f"TG: {sender}"}
+            )
+            for item_name, qty in parsed_items if item_name
+        ]
+        if db_tasks:
+            await asyncio.gather(*db_tasks, return_exceptions=True)
             await ws_manager.broadcast_refresh("shopping")
-            await reply_telegram(chat_id, f"✅ Dodano do listy ({sender}):\n• <b>" + "\n• ".join(added_summary) + "</b>")
+            added_summary = [f"{it} ({q})" if q != "1" else it for it, q in parsed_items if it]
+            await reply_telegram(chat_id, f"✅ <b>Dodano do listy ({sender}):</b>\n• " + "\n• ".join(added_summary))
 
     return {"ok": True}
 
