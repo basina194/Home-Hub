@@ -5,7 +5,7 @@ from typing import List, Optional
 
 import httpx
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Depends, Header, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Depends, Header, WebSocket, WebSocketDisconnect, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -283,3 +283,65 @@ async def telegram_webhook(update: dict):
         await ws_manager.broadcast_refresh("shopping")
         await send_telegram_alert(f"✅ Dodano do wspólnej listy ({sender}): <b>{', '.join(added_summary)}</b>")
     return {"ok": True}
+
+
+# --- WHATSAPP WEBHOOK (TWILIO) ---
+@app.post("/api/webhook/whatsapp")
+async def whatsapp_webhook(request: Request):
+    body = ""
+    sender = "WhatsApp"
+    try:
+        form = await request.form()
+        body = str(form.get("Body", "")).strip()
+        sender = str(form.get("ProfileName") or form.get("From", "WhatsApp")).replace("whatsapp:", "")
+    except Exception:
+        raw_body = (await request.body()).decode("utf-8")
+        from urllib.parse import parse_qs
+        parsed = parse_qs(raw_body)
+        body = parsed.get("Body", [""])[0].strip()
+        sender = parsed.get("ProfileName", parsed.get("From", ["WhatsApp"]))[0].replace("whatsapp:", "")
+
+    logger.info("Odebrano wiadomość WhatsApp od %s: %s", sender, body)
+
+    if not body:
+        return Response(content='<Response></Response>', media_type="application/xml")
+
+    # Obsługa: "kup mleko", "/kup mleko" lub bezpośrednio "mleko, chleb"
+    text = body
+    if text.lower().startswith("/kup "):
+        text = text[5:].strip()
+    elif text.lower().startswith("kup "):
+        text = text[4:].strip()
+
+    items_raw = [i.strip() for i in text.split(",") if i.strip()]
+    if not items_raw:
+        return Response(content='<Response></Response>', media_type="application/xml")
+
+    url = f"{SUPABASE_URL}/rest/v1/home_shopping"
+    added_summary = []
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        for raw in items_raw:
+            item_name = raw
+            qty = "1"
+            if " - " in raw:
+                parts = raw.split(" - ", 1)
+                item_name = parts[0].strip()
+                qty = parts[1].strip()
+            elif "x " in raw and raw.split("x ", 1)[0].isdigit():
+                parts = raw.split("x ", 1)
+                qty = f"{parts[0]} szt."
+                item_name = parts[1].strip()
+
+            added_summary.append(f"{item_name} ({qty})" if qty != "1" else item_name)
+            await client.post(
+                url,
+                headers=supabase_headers(),
+                json={"item": item_name, "quantity": qty, "category": "Wszystko", "added_by": f"WA: {sender}"}
+            )
+
+    await ws_manager.broadcast_refresh("shopping")
+
+    reply_text = f"✅ Dodano do listy zakupów: {', '.join(added_summary)}"
+    twiml = f'<?xml version="1.0" encoding="UTF-8"?><Response><Message>{reply_text}</Message></Response>'
+    return Response(content=twiml, media_type="application/xml")
+
