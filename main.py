@@ -25,7 +25,7 @@ SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "")
 HA_URL = os.environ.get("HA_URL", "").rstrip("/")
 HA_TOKEN = os.environ.get("HA_TOKEN", "")
-TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "9062746866:AAE4nnHqbNokIEdFnLVZs3SI8bzYsv01ZuQ")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 LATITUDE = os.environ.get("LATITUDE", "52.53")
 LONGITUDE = os.environ.get("LONGITUDE", "17.60")
@@ -250,38 +250,100 @@ async def get_ha_states():
         return [s for s in resp.json() if s.get("entity_id", "").startswith(allowed)][:10]
 
 
+async def reply_telegram(chat_id: int | str, text: str) -> None:
+    if not TELEGRAM_BOT_TOKEN or not chat_id:
+        return
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            await client.post(url, json={"chat_id": chat_id, "text": text, "parse_mode": "HTML"})
+    except Exception as exc:
+        logger.error("Błąd wysyłki Telegram reply: %s", exc)
+
+
 # --- TELEGRAM WEBHOOK ---
 @app.post("/api/webhook/telegram")
 async def telegram_webhook(update: dict):
     message = update.get("message", {})
     text = message.get("text", "").strip()
     sender = message.get("from", {}).get("first_name", "Telegram")
+    chat_id = message.get("chat", {}).get("id")
 
-    if text.lower().startswith("/kup "):
-        items_raw = [i.strip() for i in text[5:].split(",") if i.strip()]
-        url = f"{SUPABASE_URL}/rest/v1/home_shopping"
-        added_summary = []
+    if not text or not chat_id:
+        return {"ok": True}
+
+    logger.info("Odebrano Telegram od %s (chat %s): %s", sender, chat_id, text)
+
+    # /start lub pomoc
+    if text.lower() in ("/start", "/help", "/pomoc"):
+        help_msg = (
+            f"👋 Cześć <b>{sender}</b>! Jestem botem <b>Home Hub</b> 🏠\n\n"
+            "🛒 <b>Dodawanie zakupów:</b>\n"
+            "Napisz np.:\n"
+            "• <code>/kup mleko - 2 opakowania, kawa, chleb</code>\n"
+            "• albo bez ukośnika: <code>kup masło, jajka - 10 szt</code>\n\n"
+            "📋 <b>Podgląd listy:</b>\n"
+            "• Wyślij <code>/lista</code>, aby zobaczyć aktualne zakupy.\n\n"
+            "Aplikacja webowa: https://home-hub-sewt.onrender.com/"
+        )
+        await reply_telegram(chat_id, help_msg)
+        return {"ok": True}
+
+    # /lista - sprawdzenie aktualnych zakupów
+    if text.lower() in ("/lista", "lista", "/zakupy"):
+        url = f"{SUPABASE_URL}/rest/v1/home_shopping?is_bought=eq.false&order=id.asc"
         async with httpx.AsyncClient(timeout=10.0) as client:
-            for raw in items_raw:
-                item_name = raw
-                qty = "1"
-                if " - " in raw:
-                    parts = raw.split(" - ", 1)
-                    item_name = parts[0].strip()
-                    qty = parts[1].strip()
-                elif "x " in raw and raw.split("x ", 1)[0].isdigit():
-                    parts = raw.split("x ", 1)
-                    qty = f"{parts[0]} szt."
-                    item_name = parts[1].strip()
-                
-                added_summary.append(f"{item_name} ({qty})" if qty != "1" else item_name)
-                await client.post(
-                    url,
-                    headers=supabase_headers(),
-                    json={"item": item_name, "quantity": qty, "category": "Wszystko", "added_by": sender}
-                )
-        await ws_manager.broadcast_refresh("shopping")
-        await send_telegram_alert(f"✅ Dodano do wspólnej listy ({sender}): <b>{', '.join(added_summary)}</b>")
+            resp = await client.get(url, headers=supabase_headers())
+            items = resp.json() if resp.status_code == 200 else []
+
+        if not items:
+            await reply_telegram(chat_id, "🎉 <b>Lista zakupów jest pusta!</b> Wszystko kupione.")
+        else:
+            lines = ["🛒 <b>Aktualna lista zakupów:</b>"]
+            for idx, item in enumerate(items, 1):
+                qty_str = f" <i>({item.get('quantity')})</i>" if item.get("quantity") and item.get("quantity") != "1" else ""
+                lines.append(f"{idx}. {item.get('item')}{qty_str}")
+            await reply_telegram(chat_id, "\n".join(lines))
+        return {"ok": True}
+
+    # /kup lub kup
+    clean_text = text
+    if clean_text.lower().startswith("/kup "):
+        clean_text = clean_text[5:].strip()
+    elif clean_text.lower().startswith("kup "):
+        clean_text = clean_text[4:].strip()
+    else:
+        # Jeśli nie jest to komenda /kup, nie spamujemy użytkownika
+        return {"ok": True}
+
+    items_raw = [i.strip() for i in clean_text.split(",") if i.strip()]
+    if not items_raw:
+        return {"ok": True}
+
+    url = f"{SUPABASE_URL}/rest/v1/home_shopping"
+    added_summary = []
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        for raw in items_raw:
+            item_name = raw
+            qty = "1"
+            if " - " in raw:
+                parts = raw.split(" - ", 1)
+                item_name = parts[0].strip()
+                qty = parts[1].strip()
+            elif "x " in raw and raw.split("x ", 1)[0].isdigit():
+                parts = raw.split("x ", 1)
+                qty = f"{parts[0]} szt."
+                item_name = parts[1].strip()
+
+            added_summary.append(f"{item_name} ({qty})" if qty != "1" else item_name)
+            await client.post(
+                url,
+                headers=supabase_headers(),
+                json={"item": item_name, "quantity": qty, "category": "Wszystko", "added_by": f"TG: {sender}"}
+            )
+
+    await ws_manager.broadcast_refresh("shopping")
+    await reply_telegram(chat_id, f"✅ Dodano do wspólnej listy ({sender}):\n• <b>" + "\n• ".join(added_summary) + "</b>")
     return {"ok": True}
 
 
