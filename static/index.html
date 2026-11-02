@@ -135,27 +135,17 @@
         </div>
 
         <!-- Add Item Form -->
-        <form onsubmit="handleShoppingSubmit(event)" class="flex flex-col sm:flex-row gap-2">
+        <form onsubmit="handleShoppingSubmit(event)" class="flex gap-2">
           <input 
             type="text" 
             id="shopping-input" 
-            placeholder="Dodaj produkt (np. Masło, Chleb)..." 
+            placeholder="Dodaj produkt do kupienia (np. Masło, Kawa)..." 
             required 
             class="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
           >
-          <select 
-            id="shopping-category" 
-            class="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-sm text-slate-300 focus:outline-none focus:border-blue-500"
-          >
-            <option value="Spożywcze">🍞 Spożywcze</option>
-            <option value="Dom">🏠 Dom</option>
-            <option value="Chemia">🧼 Chemia</option>
-            <option value="Apteka">💊 Apteka</option>
-            <option value="Inne">📦 Inne</option>
-          </select>
           <button 
             type="submit" 
-            class="bg-blue-600 hover:bg-blue-500 active:scale-95 text-white font-medium px-5 py-2.5 rounded-xl text-sm transition-all shadow-lg shadow-blue-600/20"
+            class="bg-blue-600 hover:bg-blue-500 active:scale-95 text-white font-medium px-5 py-2.5 rounded-xl text-sm transition-all shadow-lg shadow-blue-600/20 whitespace-nowrap"
           >
             Dodaj
           </button>
@@ -173,8 +163,8 @@
         </div>
       </div>
 
-      <!-- HOME ASSISTANT / URZĄDZENIA -->
-      <div class="bg-slate-900/90 rounded-2xl border border-slate-800 p-5 shadow-xl space-y-4">
+      <!-- HOME ASSISTANT / URZĄDZENIA (UKRYTE NA TĘ CHWILĘ) -->
+      <div id="ha-section" class="hidden bg-slate-900/90 rounded-2xl border border-slate-800 p-5 shadow-xl space-y-4">
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-2">
             <div class="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center">
@@ -432,18 +422,13 @@
 
         container.innerHTML = items.map(item => `
           <div class="flex items-center justify-between p-3 rounded-xl bg-slate-950/60 border ${item.is_bought ? 'border-slate-800/40 opacity-50' : 'border-slate-800'} transition-all">
-            <div class="flex items-center gap-3 cursor-pointer select-none" onclick="toggleShoppingItem(${item.id})">
+            <div class="flex items-center gap-3 cursor-pointer select-none flex-1" onclick="toggleShoppingItem(${item.id})">
               <input type="checkbox" ${item.is_bought ? 'checked' : ''} class="w-4 h-4 rounded text-blue-600 bg-slate-900 border-slate-700 pointer-events-none">
               <span class="text-sm font-medium ${item.is_bought ? 'line-through text-slate-500' : 'text-slate-200'}">
                 ${escapeHtml(item.item)}
               </span>
             </div>
-            <div class="flex items-center gap-2">
-              <span class="text-[10px] font-medium px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700">
-                ${escapeHtml(item.category || 'Ogólne')}
-              </span>
-              ${item.added_by ? `<span class="text-[10px] text-slate-500">${escapeHtml(item.added_by)}</span>` : ''}
-            </div>
+            ${item.added_by && item.added_by !== 'Panel' ? `<span class="text-[10px] text-slate-500 bg-slate-900 px-2 py-0.5 rounded-full border border-slate-800">${escapeHtml(item.added_by)}</span>` : ''}
           </div>
         `).join('');
       } catch (e) {
@@ -454,7 +439,6 @@
     async function handleShoppingSubmit(e) {
       e.preventDefault();
       const input = document.getElementById('shopping-input');
-      const cat = document.getElementById('shopping-category');
       const text = input.value.trim();
       if (!text) return;
 
@@ -462,7 +446,7 @@
         await fetch('/api/home/shopping', {
           method: 'POST',
           headers: getHeaders(),
-          body: JSON.stringify({ item: text, category: cat.value, added_by: 'Panel' })
+          body: JSON.stringify({ item: text, category: 'Wszystko', added_by: 'Panel' })
         });
         input.value = '';
         fetchShopping();
