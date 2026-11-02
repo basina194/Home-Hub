@@ -408,8 +408,17 @@
           container.innerHTML = '<div class="text-rose-400 text-sm py-4 text-center">Błędny PIN. Kliknij kłódkę u góry, by zmienić PIN.</div>';
           return;
         }
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          container.innerHTML = `<div class="text-rose-400 text-sm py-4 text-center">Błąd serwera (${res.status}): ${errData.detail || 'Brak odpowiedzi'}</div>`;
+          return;
+        }
         const items = await res.json();
-        if (!items || items.length === 0) {
+        if (!Array.isArray(items)) {
+          container.innerHTML = `<div class="text-rose-400 text-sm py-4 text-center">Błąd danych: ${items.detail || JSON.stringify(items)}</div>`;
+          return;
+        }
+        if (items.length === 0) {
           container.innerHTML = '<div class="text-slate-500 text-sm py-6 text-center">Brak produktów na liście. Wszystko kupione! 🎉</div>';
           return;
         }
@@ -431,7 +440,7 @@
           </div>
         `).join('');
       } catch (e) {
-        container.innerHTML = '<div class="text-rose-400 text-sm py-4 text-center">Błąd ładowania listy zakupów.</div>';
+        container.innerHTML = `<div class="text-rose-400 text-sm py-4 text-center">Błąd ładowania listy zakupów: ${e.message}</div>`;
       }
     }
 
@@ -511,7 +520,16 @@
           container.innerHTML = '<div class="text-rose-400 text-sm py-4 text-center">Błędny PIN.</div>';
           return;
         }
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          container.innerHTML = `<div class="text-rose-400 text-sm py-4 text-center">Błąd serwera (${res.status}): ${errData.detail || 'Brak odpowiedzi'}</div>`;
+          return;
+        }
         const tasks = await res.json();
+        if (!Array.isArray(tasks)) {
+          container.innerHTML = `<div class="text-rose-400 text-sm py-4 text-center">Błąd danych: ${tasks.detail || JSON.stringify(tasks)}</div>`;
+          return;
+        }
 
         // Update counts
         const total = tasks.length;

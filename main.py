@@ -6,6 +6,7 @@ from typing import List, Optional
 import httpx
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Depends, Header, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -30,6 +31,16 @@ LATITUDE = os.environ.get("LATITUDE", "52.53")
 LONGITUDE = os.environ.get("LONGITUDE", "17.60")
 
 app = FastAPI(title="Nexus Cloud Hub")
+
+# CORS Middleware (obsługa localhost, 127.0.0.1, LiveServer i urządzeń w sieci)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 os.makedirs("static", exist_ok=True)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
@@ -145,7 +156,7 @@ async def get_weather():
 @app.get("/api/home/shopping", dependencies=[Depends(verify_pin)])
 async def list_shopping():
     url = f"{SUPABASE_URL}/rest/v1/home_shopping?select=*&order=is_bought.asc,id.desc&limit=50"
-    async with httpx.AsyncClient(timeout=5.0) as client:
+    async with httpx.AsyncClient(timeout=15.0) as client:
         resp = await client.get(url, headers=supabase_headers())
         resp.raise_for_status()
         return resp.json()
@@ -188,7 +199,7 @@ async def clear_bought():
 @app.get("/api/biz/tasks", dependencies=[Depends(verify_pin)])
 async def list_biz_tasks():
     url = f"{SUPABASE_URL}/rest/v1/biz_tasks?select=*&order=status.desc,due_date.asc"
-    async with httpx.AsyncClient(timeout=5.0) as client:
+    async with httpx.AsyncClient(timeout=15.0) as client:
         resp = await client.get(url, headers=supabase_headers())
         resp.raise_for_status()
         return resp.json()
