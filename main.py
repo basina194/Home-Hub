@@ -950,6 +950,53 @@ async def handle_calendar_callback(
             await reply_telegram(chat_id, edit_text)
 
 
+def select_models_for_task(user_prompt: str, media_parts: Optional[list] = None) -> list[str]:
+    """Inteligentny dobór kaskady modeli Gemini w oparciu o poziom skomplikowania zadania oraz limity konta:
+    - Modele Lite (gemini-3.5-flash-lite, gemini-flash-lite-latest, gemini-3.1-flash-lite):
+      Limit konta: 500 zapytań/dzień (RPD), 15 zapytań/minutę (RPM).
+    - Modele Top (gemini-3.8-flash, gemini-3.6-flash, gemini-flash-latest):
+      Limit konta: 20 zapytań/dzień (RPD), 5 zapytań/minutę (RPM).
+
+    Strategia:
+    1. Zadania złożone (zdjęcia paragonów/lodówki/harmonogramów, nagrania głosowe audio, rozbudowane zapytania):
+       Startujemy od modeli Top (3.8 Flash, 3.6 Flash) dla najwyższej precyzji OCR i transkrypcji.
+       Gdy napotkamy limit (429 Quota Exceeded) lub przeciążenie (503 High Demand) -> automatycznie i bezbłędnie
+       przechodzimy na sprawdzony Lite (3.5 Flash Lite, flash-lite-latest), który także świetnie radzi sobie z multimodalem.
+    2. Zadania proste (krótkie wiadomości tekstowe, zakupy, pojedynczy termin, odznaczanie kupionego):
+       Startujemy bezpośrednio z puli Lite (500 zapytań/dzień!), oszczędzając limit 20 zapytań modeli Top.
+       W razie niedostępności Lite przechodzimy na Top.
+    """
+    has_media = bool(media_parts and len(media_parts) > 0)
+    prompt_len = len(user_prompt.strip()) if user_prompt else 0
+
+    complex_keywords = [
+        "zaplanuj", "jadłospis", "jadlospis", "przepis", "ugotuj", "porównaj", "porownaj",
+        "przeanalizuj", "harmonogram", "rozpisz", "co polecasz", "dlaczego", "opowiedz", "podsumuj"
+    ]
+    is_complex_query = any(k in user_prompt.lower() for k in complex_keywords) if user_prompt else False
+    is_long_text = prompt_len > 120
+
+    is_heavy_task = has_media or is_complex_query or is_long_text
+
+    if is_heavy_task:
+        return [
+            "gemini-3.8-flash",
+            "gemini-3.6-flash",
+            "gemini-flash-latest",
+            "gemini-3.5-flash-lite",
+            "gemini-flash-lite-latest",
+            "gemini-3.1-flash-lite"
+        ]
+    else:
+        return [
+            "gemini-3.5-flash-lite",
+            "gemini-flash-lite-latest",
+            "gemini-3.1-flash-lite",
+            "gemini-3.8-flash",
+            "gemini-3.6-flash"
+        ]
+
+
 async def run_gemini_agent(
     user_prompt: str,
     sender: str,
@@ -1077,7 +1124,7 @@ ZASADY DZIAŁANIA:
         parts.extend(media_parts)
     parts.append({"text": f"Nadawca: {sender}\nTreść: {user_prompt or 'Przeanalizuj przesłany załącznik'}"})
 
-    models_to_try = [GEMINI_MODEL, "gemini-3.1-flash-lite"]
+    models_to_try = select_models_for_task(user_prompt, media_parts)
     payload = {
         "system_instruction": {"parts": [{"text": system_prompt}]},
         "contents": [{"role": "user", "parts": parts}],
@@ -1085,17 +1132,29 @@ ZASADY DZIAŁANIA:
     }
 
     try:
-        async with httpx.AsyncClient(timeout=35.0) as client:
+        async with httpx.AsyncClient(timeout=30.0) as client:
             resp = None
+            used_model = None
             for m in models_to_try:
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent?key={GEMINI_API_KEY}"
-                resp = await client.post(url, json=payload)
-                if resp.status_code == 200:
-                    break
-                logger.warning("Model %s zwrócił status %s, próbuję alternatywnego...", m, resp.status_code)
+                try:
+                    r = await client.post(url, json=payload, timeout=22.0)
+                    if r.status_code == 200:
+                        resp = r
+                        used_model = m
+                        logger.info("Zapytanie AI pomyślnie zrealizowane przez model: %s", m)
+                        break
+                    elif r.status_code == 429:
+                        logger.warning("Model %s osiągnął limit zapytań (429 Quota Exceeded). Przechodzę do niższego/kolejnego modelu...", m)
+                    elif r.status_code == 503:
+                        logger.warning("Model %s jest przeciążony (503 High Demand). Przechodzę do kolejnego modelu...", m)
+                    else:
+                        logger.warning("Model %s zwrócił status %s (%s). Próbuję kolejnego...", m, r.status_code, r.text[:100])
+                except (httpx.TimeoutException, httpx.RequestError) as net_err:
+                    logger.warning("Timeout/błąd sieciowy dla %s: %s. Próbuję kolejnego...", m, net_err)
 
             if not resp or resp.status_code != 200:
-                logger.error("Błąd odpowiedzi Gemini (%s): %s", resp.status_code if resp else "None", resp.text if resp else "")
+                logger.error("Wszystkie modele w kaskadzie Gemini wyczerpały limity lub napotkały błąd!")
                 return "", False, []
 
             data = resp.json()
