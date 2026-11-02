@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="pl" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Nexus Cloud Hub</title>
+  <meta name="theme-color" content="#0f172a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Home Hub">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="icon" type="image/svg+xml" href="/static/icon.svg">
+  <link rel="apple-touch-icon" href="/static/icon.svg">
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#eff6ff',
+              500: '#3b82f6',
+              600: '#2563eb',
+              700: '#1d4ed8',
+              900: '#1e3a8a'
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* iOS Safe area padding */
+    body {
+      padding-top: env(safe-area-inset-top);
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 4px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background-color: rgba(148, 163, 184, 0.2);
+      border-radius: 9999px;
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans selection:bg-blue-600 selection:text-white pb-20 select-none md:select-auto">
+
+  <!-- TOP HEADER -->
+  <header class="sticky top-0 z-40 bg-slate-900/80 backdrop-blur-md border-b border-slate-800/80 px-4 py-3">
+    <div class="max-w-4xl mx-auto flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/20">
+          <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
+          </svg>
+        </div>
+        <div>
+          <h1 class="text-lg font-bold tracking-tight text-white flex items-center gap-2">
+            Nexus Hub
+            <span class="text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20">Cloud</span>
+          </h1>
+          <p id="weather-quick" class="text-xs text-slate-400">Ładowanie pogody...</p>
+        </div>
+      </div>
+
+      <!-- Mode Switcher (Desktop / Tablet) & Settings -->
+      <div class="flex items-center gap-2">
+        <div class="hidden sm:flex bg-slate-800/90 p-1 rounded-xl border border-slate-700/60 shadow-inner">
+          <button onclick="setTab('home')" id="tab-btn-home" class="px-4 py-1.5 rounded-lg text-xs font-semibold transition-all bg-blue-600 text-white shadow">
+            🏠 Dom
+          </button>
+          <button onclick="setTab('biz')" id="tab-btn-biz" class="px-4 py-1.5 rounded-lg text-xs font-semibold transition-all text-slate-400 hover:text-white">
+            💼 Firma
+          </button>
+        </div>
+
+        <!-- PIN Settings button -->
+        <button onclick="changePinPrompt()" title="Zmień kod PIN" class="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700/60 text-slate-300 hover:text-white transition-colors">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- MAIN CONTAINER -->
+  <main class="flex-1 max-w-4xl w-full mx-auto p-4 space-y-6">
+
+    <!-- ==================== TAB: DOM ==================== -->
+    <div id="section-home" class="space-y-6">
+
+      <!-- POGODA CARD -->
+      <div class="bg-gradient-to-br from-slate-900 to-slate-850 rounded-2xl border border-slate-800 p-5 shadow-xl relative overflow-hidden">
+        <div class="absolute -right-6 -bottom-6 w-32 h-32 bg-blue-500/10 rounded-full blur-2xl pointer-events-none"></div>
+        <div class="flex items-start justify-between relative z-10">
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="text-xs uppercase tracking-wider font-semibold text-blue-400">Warunki Atmosferyczne</span>
+              <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-slate-800 text-slate-300 border border-slate-700">Gniezno & okolice</span>
+            </div>
+            <div class="mt-2 flex items-baseline gap-3">
+              <span id="weather-temp" class="text-4xl font-extrabold tracking-tight text-white">--°C</span>
+              <span id="weather-rain" class="text-sm font-medium text-cyan-400 flex items-center gap-1">
+                💧 --% opadów
+              </span>
+            </div>
+          </div>
+          <div class="text-right">
+            <div class="text-xs text-slate-400">Prędkość wiatru</div>
+            <div id="weather-wind" class="text-lg font-semibold text-slate-200 mt-1">-- km/h</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- LISTA ZAKUPÓW -->
+      <div class="bg-slate-900/90 rounded-2xl border border-slate-800 p-5 shadow-xl space-y-4">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <div class="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center">
+              🛒
+            </div>
+            <div>
+              <h2 class="text-base font-bold text-white">Wspólna Lista Zakupów</h2>
+              <p class="text-xs text-slate-400">Synchronizowana w chmurze Supabase</p>
+            </div>
+          </div>
+          <button onclick="clearBoughtItems()" class="text-xs px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700/60 transition-colors">
+            Wyczyść kupione
+          </button>
+        </div>
+
+        <!-- Add Item Form -->
+        <form onsubmit="handleShoppingSubmit(event)" class="flex flex-col sm:flex-row gap-2">
+          <input 
+            type="text" 
+            id="shopping-input" 
+            placeholder="Dodaj produkt (np. Masło, Chleb)..." 
+            required 
+            class="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+          >
+          <select 
+            id="shopping-category" 
+            class="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-sm text-slate-300 focus:outline-none focus:border-blue-500"
+          >
+            <option value="Spożywcze">🍞 Spożywcze</option>
+            <option value="Dom">🏠 Dom</option>
+            <option value="Chemia">🧼 Chemia</option>
+            <option value="Apteka">💊 Apteka</option>
+            <option value="Inne">📦 Inne</option>
+          </select>
+          <button 
+            type="submit" 
+            class="bg-blue-600 hover:bg-blue-500 active:scale-95 text-white font-medium px-5 py-2.5 rounded-xl text-sm transition-all shadow-lg shadow-blue-600/20"
+          >
+            Dodaj
+          </button>
+        </form>
+
+        <!-- Telegram Hint -->
+        <div class="flex items-center gap-2 p-2.5 rounded-xl bg-sky-950/40 border border-sky-800/40 text-xs text-sky-300">
+          <span class="text-base">✈️</span>
+          <span>Tip: Możesz dodać zakupy z Telegrama komendą: <code class="font-mono bg-sky-900/50 px-1 py-0.5 rounded text-white">/kup mleko, ser, kawa</code></span>
+        </div>
+
+        <!-- Shopping List Items -->
+        <div id="shopping-list" class="space-y-2 max-h-96 overflow-y-auto custom-scrollbar pr-1">
+          <div class="text-center py-8 text-sm text-slate-500">Ładowanie produktów...</div>
+        </div>
+      </div>
+
+      <!-- HOME ASSISTANT / URZĄDZENIA -->
+      <div class="bg-slate-900/90 rounded-2xl border border-slate-800 p-5 shadow-xl space-y-4">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <div class="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center">
+              💡
+            </div>
+            <div>
+              <h2 class="text-base font-bold text-white">Dom & Urządzenia</h2>
+              <p class="text-xs text-slate-400">Home Assistant Proxy</p>
+            </div>
+          </div>
+          <button onclick="fetchHAStates()" class="text-xs text-slate-400 hover:text-white">Odśwież</button>
+        </div>
+
+        <div id="ha-devices" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div class="text-center py-6 col-span-2 text-sm text-slate-500">Pobieranie stanów urządzeń...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== TAB: FIRMA ==================== -->
+    <div id="section-biz" class="space-y-6 hidden">
+
+      <!-- STATS BAR -->
+      <div class="grid grid-cols-3 gap-3">
+        <div class="bg-slate-900 rounded-2xl border border-slate-800 p-4 text-center">
+          <span class="text-xs text-slate-400">Wszystkie</span>
+          <div id="biz-total-count" class="text-2xl font-bold text-white mt-1">0</div>
+        </div>
+        <div class="bg-slate-900 rounded-2xl border border-slate-800 p-4 text-center">
+          <span class="text-xs text-amber-400">Do zrobienia</span>
+          <div id="biz-todo-count" class="text-2xl font-bold text-amber-400 mt-1">0</div>
+        </div>
+        <div class="bg-slate-900 rounded-2xl border border-slate-800 p-4 text-center">
+          <span class="text-xs text-rose-400">Pilne</span>
+          <div id="biz-urgent-count" class="text-2xl font-bold text-rose-400 mt-1">0</div>
+        </div>
+      </div>
+
+      <!-- ADD TASK FORM -->
+      <div class="bg-slate-900/90 rounded-2xl border border-slate-800 p-5 shadow-xl space-y-4">
+        <div class="flex items-center gap-2">
+          <div class="w-8 h-8 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center">
+            📋
+          </div>
+          <div>
+            <h2 class="text-base font-bold text-white">Nowe Zadanie / Polisa</h2>
+            <p class="text-xs text-slate-400">Baza zadań biznesowych w Supabase</p>
+          </div>
+        </div>
+
+        <form onsubmit="handleBizSubmit(event)" class="space-y-3">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-medium text-slate-400 mb-1">Klient / Firma</label>
+              <input 
+                type="text" 
+                id="biz-client" 
+                placeholder="np. Jan Kowalski / Firma ABC" 
+                required 
+                class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+              >
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-400 mb-1">Typ zadania</label>
+              <select 
+                id="biz-type" 
+                class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-sm text-slate-300 focus:outline-none focus:border-indigo-500"
+              >
+                <option value="Wznowienie polisy">📄 Wznowienie polisy</option>
+                <option value="Nowa oferta">💼 Nowa oferta</option>
+                <option value="Kontakt telefoniczny">📞 Kontakt telefoniczny</option>
+                <option value="Likwidacja szkody">🛡️ Likwidacja szkody</option>
+                <option value="Spotkanie">🤝 Spotkanie</option>
+                <option value="Inne">📌 Inne</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-medium text-slate-400 mb-1">Termin realizacji</label>
+              <input 
+                type="date" 
+                id="biz-date" 
+                required 
+                class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-sm text-slate-300 focus:outline-none focus:border-indigo-500"
+              >
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-400 mb-1">Priorytet</label>
+              <select 
+                id="biz-priority" 
+                class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-sm text-slate-300 focus:outline-none focus:border-indigo-500"
+              >
+                <option value="Normalny">Normalny</option>
+                <option value="Wysoki">Wysoki</option>
+                <option value="Krytyczny">🚨 Krytyczny (Powiadomienie Telegram)</option>
+              </select>
+            </div>
+          </div>
+
+          <button 
+            type="submit" 
+            class="w-full bg-indigo-600 hover:bg-indigo-500 active:scale-98 text-white font-semibold py-2.5 rounded-xl text-sm transition-all shadow-lg shadow-indigo-600/20"
+          >
+            Zapisz zadanie
+          </button>
+        </form>
+      </div>
+
+      <!-- BIZ TASKS LIST -->
+      <div class="bg-slate-900/90 rounded-2xl border border-slate-800 p-5 shadow-xl space-y-3">
+        <h3 class="text-sm font-semibold text-slate-300">Lista Spraw i Wznowień</h3>
+        <div id="biz-tasks-list" class="space-y-2 max-h-[30rem] overflow-y-auto custom-scrollbar pr-1">
+          <div class="text-center py-8 text-sm text-slate-500">Ładowanie spraw...</div>
+        </div>
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- BOTTOM STATUS & NAVIGATION (Mobile First PWA Bar) -->
+  <footer class="fixed bottom-0 left-0 right-0 z-40 bg-slate-900/95 backdrop-blur-lg border-t border-slate-800/80 px-4 py-2">
+    <div class="max-w-4xl mx-auto flex items-center justify-between">
+      
+      <!-- Live WebSocket Connection Indicator -->
+      <div class="flex items-center gap-2">
+        <span id="ws-indicator" class="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse"></span>
+        <span id="ws-status" class="text-xs font-medium text-slate-400">Łączenie...</span>
+      </div>
+
+      <!-- Mobile Tab Switcher -->
+      <div class="flex sm:hidden bg-slate-800/90 p-1 rounded-xl border border-slate-700/60">
+        <button onclick="setTab('home')" id="mob-tab-btn-home" class="px-3.5 py-1 rounded-lg text-xs font-semibold bg-blue-600 text-white">
+          Dom
+        </button>
+        <button onclick="setTab('biz')" id="mob-tab-btn-biz" class="px-3.5 py-1 rounded-lg text-xs font-semibold text-slate-400">
+          Firma
+        </button>
+      </div>
+
+      <!-- Install PWA prompt button -->
+      <button id="pwa-install-btn" class="hidden text-xs bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-lg font-medium shadow-md transition-all">
+        📲 Zainstaluj PWA
+      </button>
+    </div>
+  </footer>
+
+  <!-- SCRIPT -->
+  <script>
+    // State
+    let activeTab = 'home';
+    let appPin = localStorage.getItem('nexus_app_pin') || '1234';
+    let socket = null;
+    let deferredPrompt = null;
+
+    function getHeaders() {
+      return {
+        'Content-Type': 'application/json',
+        'X-App-Pin': appPin
+      };
+    }
+
+    function changePinPrompt() {
+      const newPin = prompt('Wprowadź kod PIN aplikacji:', appPin);
+      if (newPin) {
+        appPin = newPin.trim();
+        localStorage.setItem('nexus_app_pin', appPin);
+        refreshAllData();
+      }
+    }
+
+    function setTab(tab) {
+      activeTab = tab;
+      const homeSec = document.getElementById('section-home');
+      const bizSec = document.getElementById('section-biz');
+
+      const dHomeBtn = document.getElementById('tab-btn-home');
+      const dBizBtn = document.getElementById('tab-btn-biz');
+      const mHomeBtn = document.getElementById('mob-tab-btn-home');
+      const mBizBtn = document.getElementById('mob-tab-btn-biz');
+
+      if (tab === 'home') {
+        homeSec.classList.remove('hidden');
+        bizSec.classList.add('hidden');
+
+        dHomeBtn.className = "px-4 py-1.5 rounded-lg text-xs font-semibold transition-all bg-blue-600 text-white shadow";
+        dBizBtn.className = "px-4 py-1.5 rounded-lg text-xs font-semibold transition-all text-slate-400 hover:text-white";
+        mHomeBtn.className = "px-3.5 py-1 rounded-lg text-xs font-semibold bg-blue-600 text-white";
+        mBizBtn.className = "px-3.5 py-1 rounded-lg text-xs font-semibold text-slate-400";
+      } else {
+        homeSec.classList.add('hidden');
+        bizSec.classList.remove('hidden');
+
+        dBizBtn.className = "px-4 py-1.5 rounded-lg text-xs font-semibold transition-all bg-indigo-600 text-white shadow";
+        dHomeBtn.className = "px-4 py-1.5 rounded-lg text-xs font-semibold transition-all text-slate-400 hover:text-white";
+        mBizBtn.className = "px-3.5 py-1 rounded-lg text-xs font-semibold bg-indigo-600 text-white";
+        mHomeBtn.className = "px-3.5 py-1 rounded-lg text-xs font-semibold text-slate-400";
+      }
+    }
+
+    // --- POGODA ---
+    async function fetchWeather() {
+      try {
+        const res = await fetch('/api/home/weather', { headers: getHeaders() });
+        if (!res.ok) throw new Error('Auth or weather error');
+        const data = await res.json();
+        const cur = data.current || {};
+        const daily = data.daily || {};
+
+        const temp = cur.temperature_2m !== undefined ? Math.round(cur.temperature_2m) : '--';
+        const wind = cur.wind_speed_10m !== undefined ? cur.wind_speed_10m : '--';
+        const rain = daily.precipitation_probability_max?.[0] ?? 0;
+
+        document.getElementById('weather-temp').innerText = `${temp}°C`;
+        document.getElementById('weather-rain').innerText = `💧 ${rain}% opadów`;
+        document.getElementById('weather-wind').innerText = `${wind} km/h`;
+        document.getElementById('weather-quick').innerText = `${temp}°C, wiatr ${wind} km/h`;
+      } catch (e) {
+        document.getElementById('weather-quick').innerText = 'Błąd pogody / sprawdź PIN';
+      }
+    }
+
+    // --- ZAKUPY ---
+    async function fetchShopping() {
+      const container = document.getElementById('shopping-list');
+      try {
+        const res = await fetch('/api/home/shopping', { headers: getHeaders() });
+        if (res.status === 401) {
+          container.innerHTML = '<div class="text-rose-400 text-sm py-4 text-center">Błędny PIN. Kliknij kłódkę u góry, by zmienić PIN.</div>';
+          return;
+        }
+        const items = await res.json();
+        if (!items || items.length === 0) {
+          container.innerHTML = '<div class="text-slate-500 text-sm py-6 text-center">Brak produktów na liście. Wszystko kupione! 🎉</div>';
+          return;
+        }
+
+        container.innerHTML = items.map(item => `
+          <div class="flex items-center justify-between p-3 rounded-xl bg-slate-950/60 border ${item.is_bought ? 'border-slate-800/40 opacity-50' : 'border-slate-800'} transition-all">
+            <div class="flex items-center gap-3 cursor-pointer select-none" onclick="toggleShoppingItem(${item.id})">
+              <input type="checkbox" ${item.is_bought ? 'checked' : ''} class="w-4 h-4 rounded text-blue-600 bg-slate-900 border-slate-700 pointer-events-none">
+              <span class="text-sm font-medium ${item.is_bought ? 'line-through text-slate-500' : 'text-slate-200'}">
+                ${escapeHtml(item.item)}
+              </span>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="text-[10px] font-medium px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700">
+                ${escapeHtml(item.category || 'Ogólne')}
+              </span>
+              ${item.added_by ? `<span class="text-[10px] text-slate-500">${escapeHtml(item.added_by)}</span>` : ''}
+            </div>
+          </div>
+        `).join('');
+      } catch (e) {
+        container.innerHTML = '<div class="text-rose-400 text-sm py-4 text-center">Błąd ładowania listy zakupów.</div>';
+      }
+    }
+
+    async function handleShoppingSubmit(e) {
+      e.preventDefault();
+      const input = document.getElementById('shopping-input');
+      const cat = document.getElementById('shopping-category');
+      const text = input.value.trim();
+      if (!text) return;
+
+      try {
+        await fetch('/api/home/shopping', {
+          method: 'POST',
+          headers: getHeaders(),
+          body: JSON.stringify({ item: text, category: cat.value, added_by: 'Panel' })
+        });
+        input.value = '';
+        fetchShopping();
+      } catch (err) {
+        alert('Błąd dodawania produktu: ' + err.message);
+      }
+    }
+
+    async function toggleShoppingItem(id) {
+      try {
+        await fetch(`/api/home/shopping/${id}/toggle`, {
+          method: 'PATCH',
+          headers: getHeaders()
+        });
+        fetchShopping();
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    async function clearBoughtItems() {
+      if (!confirm('Czy na pewno chcesz usunąć kupione pozycje?')) return;
+      try {
+        await fetch('/api/home/shopping/clear-bought', {
+          method: 'DELETE',
+          headers: getHeaders()
+        });
+        fetchShopping();
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    // --- HOME ASSISTANT ---
+    async function fetchHAStates() {
+      const container = document.getElementById('ha-devices');
+      try {
+        const res = await fetch('/api/home/ha/states', { headers: getHeaders() });
+        const list = await res.json();
+        container.innerHTML = list.map(dev => `
+          <div class="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800 flex items-center justify-between">
+            <div>
+              <div class="text-sm font-medium text-slate-200">${escapeHtml(dev.attributes?.friendly_name || dev.entity_id)}</div>
+              <div class="text-[11px] text-slate-500 font-mono">${escapeHtml(dev.entity_id)}</div>
+            </div>
+            <span class="text-xs font-semibold px-2.5 py-1 rounded-lg ${dev.state === 'on' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'bg-slate-800 text-slate-400'}">
+              ${escapeHtml(dev.state)}
+            </span>
+          </div>
+        `).join('');
+      } catch (e) {
+        container.innerHTML = '<div class="text-slate-500 text-sm py-4 col-span-2 text-center">Brak połączenia z HA (tryb demo aktywny).</div>';
+      }
+    }
+
+    // --- MODUŁ FIRMA (BIZ TASKS) ---
+    async function fetchBizTasks() {
+      const container = document.getElementById('biz-tasks-list');
+      try {
+        const res = await fetch('/api/biz/tasks', { headers: getHeaders() });
+        if (res.status === 401) {
+          container.innerHTML = '<div class="text-rose-400 text-sm py-4 text-center">Błędny PIN.</div>';
+          return;
+        }
+        const tasks = await res.json();
+
+        // Update counts
+        const total = tasks.length;
+        const todo = tasks.filter(t => t.status !== 'Done').length;
+        const urgent = tasks.filter(t => t.priority === 'Krytyczny' && t.status !== 'Done').length;
+
+        document.getElementById('biz-total-count').innerText = total;
+        document.getElementById('biz-todo-count').innerText = todo;
+        document.getElementById('biz-urgent-count').innerText = urgent;
+
+        if (total === 0) {
+          container.innerHTML = '<div class="text-slate-500 text-sm py-6 text-center">Brak zadań w toku. Dobra robota! ☕</div>';
+          return;
+        }
+
+        container.innerHTML = tasks.map(task => {
+          const isDone = task.status === 'Done';
+          const isUrgent = task.priority === 'Krytyczny';
+          return `
+            <div class="p-3.5 rounded-xl bg-slate-950/60 border ${isDone ? 'border-slate-800/40 opacity-50' : (isUrgent ? 'border-rose-500/50 bg-rose-950/10' : 'border-slate-800')} flex items-center justify-between gap-3">
+              <div class="flex items-start gap-3 flex-1 min-w-0">
+                <button onclick="toggleBizTask(${task.id})" class="mt-0.5 w-5 h-5 rounded flex items-center justify-center border ${isDone ? 'bg-indigo-600 border-indigo-600 text-white' : 'border-slate-700 bg-slate-900'}">
+                  ${isDone ? '✓' : ''}
+                </button>
+                <div class="min-w-0 flex-1">
+                  <div class="text-sm font-semibold text-slate-100 truncate ${isDone ? 'line-through text-slate-500' : ''}">
+                    ${escapeHtml(task.client_name)}
+                  </div>
+                  <div class="text-xs text-slate-400 flex items-center gap-2 mt-0.5">
+                    <span>${escapeHtml(task.task_type)}</span>
+                    <span>•</span>
+                    <span class="font-mono text-slate-400">Termin: ${escapeHtml(task.due_date)}</span>
+                  </div>
+                </div>
+              </div>
+              <div>
+                <span class="text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                  isUrgent ? 'bg-rose-500/20 text-rose-400 border border-rose-500/40 animate-pulse' : 
+                  (task.priority === 'Wysoki' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'bg-slate-800 text-slate-400')
+                }">
+                  ${escapeHtml(task.priority)}
+                </span>
+              </div>
+            </div>
+          `;
+        }).join('');
+      } catch (e) {
+        container.innerHTML = '<div class="text-rose-400 text-sm py-4 text-center">Błąd ładowania spraw firmowych.</div>';
+      }
+    }
+
+    async function handleBizSubmit(e) {
+      e.preventDefault();
+      const client = document.getElementById('biz-client').value.trim();
+      const type = document.getElementById('biz-type').value;
+      const date = document.getElementById('biz-date').value;
+      const priority = document.getElementById('biz-priority').value;
+
+      try {
+        await fetch('/api/biz/tasks', {
+          method: 'POST',
+          headers: getHeaders(),
+          body: JSON.stringify({
+            client_name: client,
+            task_type: type,
+            due_date: date,
+            priority: priority
+          })
+        });
+        document.getElementById('biz-client').value = '';
+        fetchBizTasks();
+      } catch (err) {
+        alert('Błąd dodawania zadania: ' + err.message);
+      }
+    }
+
+    async function toggleBizTask(id) {
+      try {
+        await fetch(`/api/biz/tasks/${id}/done`, {
+          method: 'PATCH',
+          headers: getHeaders()
+        });
+        fetchBizTasks();
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    // --- WEBSOCKETS (LIVE SYNC) ---
+    function initWebSocket() {
+      const indicator = document.getElementById('ws-indicator');
+      const status = document.getElementById('ws-status');
+
+      const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//${location.host}/ws`;
+
+      socket = new WebSocket(wsUrl);
+
+      socket.onopen = () => {
+        indicator.className = "w-2.5 h-2.5 rounded-full bg-emerald-400";
+        status.innerText = "Na żywo (Cloud WS)";
+      };
+
+      socket.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          if (msg.action === 'refresh') {
+            if (msg.module === 'shopping') fetchShopping();
+            if (msg.module === 'biz') fetchBizTasks();
+          }
+        } catch (e) {
+          console.error('WS Parse error', e);
+        }
+      };
+
+      socket.onclose = () => {
+        indicator.className = "w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse";
+        status.innerText = "Rozłączono (ponawianie...)";
+        setTimeout(initWebSocket, 4000);
+      };
+
+      socket.onerror = () => {
+        socket.close();
+      };
+    }
+
+    function refreshAllData() {
+      fetchWeather();
+      fetchShopping();
+      fetchHAStates();
+      fetchBizTasks();
+    }
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    // --- PWA SERVICE WORKER & INSTALL PROMPT ---
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').catch(err => console.log('SW fail:', err));
+      });
+    }
+
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+      const installBtn = document.getElementById('pwa-install-btn');
+      installBtn.classList.remove('hidden');
+      installBtn.addEventListener('click', () => {
+        deferredPrompt.prompt();
+        deferredPrompt.userChoice.then(() => {
+          deferredPrompt = null;
+          installBtn.classList.add('hidden');
+        });
+      });
+    });
+
+    // Set today's date in biz task form
+    document.addEventListener('DOMContentLoaded', () => {
+      const today = new Date().toISOString().split('T')[0];
+      const dateEl = document.getElementById('biz-date');
+      if (dateEl) dateEl.value = today;
+
+      initWebSocket();
+      refreshAllData();
+      setInterval(fetchWeather, 300000); // co 5 minut odświeżaj pogodę
+    });
+  </script>
+</body>
+</html>
