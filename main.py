@@ -97,7 +97,8 @@ async def send_telegram_alert(message: str) -> None:
 
 class ShoppingItemCreate(BaseModel):
     item: str
-    category: str = "Spożywcze"
+    quantity: Optional[str] = "1"
+    category: str = "Wszystko"
     added_by: str = "Aplikacja"
 
 
@@ -257,15 +258,28 @@ async def telegram_webhook(update: dict):
     sender = message.get("from", {}).get("first_name", "Telegram")
 
     if text.lower().startswith("/kup "):
-        items = [i.strip() for i in text[5:].split(",") if i.strip()]
+        items_raw = [i.strip() for i in text[5:].split(",") if i.strip()]
         url = f"{SUPABASE_URL}/rest/v1/home_shopping"
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            for item in items:
+        added_summary = []
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            for raw in items_raw:
+                item_name = raw
+                qty = "1"
+                if " - " in raw:
+                    parts = raw.split(" - ", 1)
+                    item_name = parts[0].strip()
+                    qty = parts[1].strip()
+                elif "x " in raw and raw.split("x ", 1)[0].isdigit():
+                    parts = raw.split("x ", 1)
+                    qty = f"{parts[0]} szt."
+                    item_name = parts[1].strip()
+                
+                added_summary.append(f"{item_name} ({qty})" if qty != "1" else item_name)
                 await client.post(
                     url,
                     headers=supabase_headers(),
-                    json={"item": item, "category": "Telegram", "added_by": sender}
+                    json={"item": item_name, "quantity": qty, "category": "Wszystko", "added_by": sender}
                 )
         await ws_manager.broadcast_refresh("shopping")
-        await send_telegram_alert(f"✅ Dodano do wspólnej listy ({sender}): <b>{', '.join(items)}</b>")
+        await send_telegram_alert(f"✅ Dodano do wspólnej listy ({sender}): <b>{', '.join(added_summary)}</b>")
     return {"ok": True}

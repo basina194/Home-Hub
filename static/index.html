@@ -135,20 +135,28 @@
         </div>
 
         <!-- Add Item Form -->
-        <form onsubmit="handleShoppingSubmit(event)" class="flex gap-2">
+        <form onsubmit="handleShoppingSubmit(event)" class="flex flex-col sm:flex-row gap-2">
           <input 
             type="text" 
             id="shopping-input" 
-            placeholder="Dodaj produkt do kupienia (np. Masło, Kawa)..." 
+            placeholder="Co kupić? (np. Mleko, Chleb)..." 
             required 
             class="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
           >
-          <button 
-            type="submit" 
-            class="bg-blue-600 hover:bg-blue-500 active:scale-95 text-white font-medium px-5 py-2.5 rounded-xl text-sm transition-all shadow-lg shadow-blue-600/20 whitespace-nowrap"
-          >
-            Dodaj
-          </button>
+          <div class="flex gap-2">
+            <input 
+              type="text" 
+              id="shopping-qty" 
+              placeholder="Ilość (np. 2 op., 1 kg)" 
+              class="w-full sm:w-36 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-blue-500"
+            >
+            <button 
+              type="submit" 
+              class="bg-blue-600 hover:bg-blue-500 active:scale-95 text-white font-medium px-5 py-2.5 rounded-xl text-sm transition-all shadow-lg shadow-blue-600/20 whitespace-nowrap"
+            >
+              Dodaj
+            </button>
+          </div>
         </form>
 
         <!-- Telegram Hint -->
@@ -422,13 +430,20 @@
 
         container.innerHTML = items.map(item => `
           <div class="flex items-center justify-between p-3 rounded-xl bg-slate-950/60 border ${item.is_bought ? 'border-slate-800/40 opacity-50' : 'border-slate-800'} transition-all">
-            <div class="flex items-center gap-3 cursor-pointer select-none flex-1" onclick="toggleShoppingItem(${item.id})">
-              <input type="checkbox" ${item.is_bought ? 'checked' : ''} class="w-4 h-4 rounded text-blue-600 bg-slate-900 border-slate-700 pointer-events-none">
-              <span class="text-sm font-medium ${item.is_bought ? 'line-through text-slate-500' : 'text-slate-200'}">
-                ${escapeHtml(item.item)}
-              </span>
+            <div class="flex items-center gap-3 cursor-pointer select-none flex-1 min-w-0" onclick="toggleShoppingItem(${item.id})">
+              <input type="checkbox" ${item.is_bought ? 'checked' : ''} class="w-4 h-4 rounded text-blue-600 bg-slate-900 border-slate-700 pointer-events-none flex-shrink-0">
+              <div class="flex flex-wrap items-baseline gap-2 min-w-0">
+                <span class="text-sm font-medium ${item.is_bought ? 'line-through text-slate-500' : 'text-slate-200'}">
+                  ${escapeHtml(item.item)}
+                </span>
+                ${item.quantity && item.quantity !== '1' ? `
+                  <span class="text-xs font-semibold px-2 py-0.5 rounded-md bg-blue-500/15 text-blue-300 border border-blue-500/30">
+                    ${escapeHtml(item.quantity)}
+                  </span>
+                ` : ''}
+              </div>
             </div>
-            ${item.added_by && item.added_by !== 'Panel' ? `<span class="text-[10px] text-slate-500 bg-slate-900 px-2 py-0.5 rounded-full border border-slate-800">${escapeHtml(item.added_by)}</span>` : ''}
+            ${item.added_by && item.added_by !== 'Panel' ? `<span class="text-[10px] text-slate-500 bg-slate-900 px-2 py-0.5 rounded-full border border-slate-800 flex-shrink-0">${escapeHtml(item.added_by)}</span>` : ''}
           </div>
         `).join('');
       } catch (e) {
@@ -439,16 +454,26 @@
     async function handleShoppingSubmit(e) {
       e.preventDefault();
       const input = document.getElementById('shopping-input');
-      const text = input.value.trim();
+      const qtyInput = document.getElementById('shopping-qty');
+      let text = input.value.trim();
+      let qty = qtyInput ? qtyInput.value.trim() : '';
       if (!text) return;
+
+      // Obsługa formatu np. "Mleko - 2 opakowania" wpisanego bezpośrednio w nazwie
+      if (!qty && text.includes(' - ')) {
+        const parts = text.split(' - ');
+        text = parts[0].trim();
+        qty = parts.slice(1).join(' - ').trim();
+      }
 
       try {
         await fetch('/api/home/shopping', {
           method: 'POST',
           headers: getHeaders(),
-          body: JSON.stringify({ item: text, category: 'Wszystko', added_by: 'Panel' })
+          body: JSON.stringify({ item: text, quantity: qty || '1', category: 'Wszystko', added_by: 'Panel' })
         });
         input.value = '';
+        if (qtyInput) qtyInput.value = '';
         fetchShopping();
       } catch (err) {
         alert('Błąd dodawania produktu: ' + err.message);
