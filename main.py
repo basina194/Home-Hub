@@ -34,6 +34,7 @@ HA_TOKEN = os.environ.get("HA_TOKEN", "")
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "9062746866:AAE4nnHqbNokIEdFnLVZs3SI8bzYsv01ZuQ")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 WIFE_TELEGRAM_ID = "9216839954"
+BARTOSZ_TELEGRAM_ID = "7939517140"
 LATITUDE = os.environ.get("LATITUDE", "52.53")
 LONGITUDE = os.environ.get("LONGITUDE", "17.60")
 
@@ -94,27 +95,56 @@ class ConnectionManager:
 ws_manager = ConnectionManager()
 
 
-async def send_telegram_alert(message: str) -> None:
-    """Wysyła alert/powiadomienie na Telegramie do wszystkich zarejestrowanych domowników (Bartosz i Daria)."""
+async def send_telegram_alert(message: str, category: str = "Wspólne") -> None:
+    """Wysyła alert/powiadomienie na Telegramie w zależności od kategorii zadania:
+    - 'Śmieci' lub 'Wspólne' -> otrzymują obydwoje domowników (Bartosz i Daria)
+    - 'Bartosz' -> wyłącznie Bartosz
+    - 'Daria' -> wyłącznie Daria
+    """
     if not TELEGRAM_BOT_TOKEN:
         return
-    targets = set()
-    if TELEGRAM_CHAT_ID:
-        targets.add(str(TELEGRAM_CHAT_ID))
-    if WIFE_TELEGRAM_ID:
-        targets.add(str(WIFE_TELEGRAM_ID))
 
-    # Pobierz dynamicznie zarejestrowanych subskrybentów (np. czat Bartosza po pierwszym kontakcie)
+    cat = (category or "Wspólne").strip()
+    norm = cat.lower()
+
+    bartosz_targets = set()
+    daria_targets = set()
+
+    if BARTOSZ_TELEGRAM_ID:
+        bartosz_targets.add(str(BARTOSZ_TELEGRAM_ID).strip())
+    if TELEGRAM_CHAT_ID and str(TELEGRAM_CHAT_ID).strip() != WIFE_TELEGRAM_ID:
+        bartosz_targets.add(str(TELEGRAM_CHAT_ID).strip())
+
+    if WIFE_TELEGRAM_ID:
+        daria_targets.add(str(WIFE_TELEGRAM_ID).strip())
+
+    # Pobierz dynamicznie zarejestrowanych subskrybentów (chat_id + name)
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.get(f"{SUPABASE_URL}/rest/v1/telegram_subscribers?select=chat_id", headers=supabase_headers())
+            resp = await client.get(f"{SUPABASE_URL}/rest/v1/telegram_subscribers?select=chat_id,name", headers=supabase_headers())
             if resp.status_code == 200:
                 for row in resp.json():
                     cid = str(row.get("chat_id", "")).strip()
-                    if cid:
-                        targets.add(cid)
+                    name = str(row.get("name", "")).strip().lower()
+                    if not cid:
+                        continue
+                    if "daria" in name or cid == WIFE_TELEGRAM_ID:
+                        daria_targets.add(cid)
+                    else:
+                        bartosz_targets.add(cid)
     except Exception as exc:
         logger.warning("Błąd odczytu telegram_subscribers: %s", exc)
+
+    if norm == "bartosz":
+        targets = bartosz_targets
+    elif norm == "daria":
+        targets = daria_targets
+    else:
+        # 'Śmieci', 'Wspólne' i inne zadania ogólne -> do obojga
+        targets = bartosz_targets.union(daria_targets)
+
+    if not targets:
+        return
 
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     async with httpx.AsyncClient(timeout=8.0) as client:
@@ -122,7 +152,7 @@ async def send_telegram_alert(message: str) -> None:
             try:
                 await client.post(url, json={"chat_id": tid, "text": message, "parse_mode": "HTML"})
             except Exception as exc:
-                logger.error("Błąd wysyłki Telegram do %s: %s", tid, exc)
+                logger.error("Błąd wysyłki Telegram do %s (kat: %s): %s", tid, category, exc)
 
 
 async def check_and_send_calendar_reminders():
@@ -176,7 +206,7 @@ async def check_and_send_calendar_reminders():
                             f"• Data odbioru: <b>{ev_date}</b>\n\n"
                             f"👉 <i>Pamiętajcie o wystawieniu odpowiedniego kubła lub worków przed posesję!</i>"
                         )
-                        await send_telegram_alert(msg)
+                        await send_telegram_alert(msg, category="Śmieci")
                         new_milestones.add("smieci_1d_before")
 
                     # W dniu wydarzenia rano (od godz. 6:00)
@@ -186,7 +216,7 @@ async def check_and_send_calendar_reminders():
                             f"• Frakcja: <b>{title}</b>\n\n"
                             f"👉 <i>Upewnijcie się, że odpady są wystawione przy drodze przed przyjazdem śmieciarki!</i>"
                         )
-                        await send_telegram_alert(msg)
+                        await send_telegram_alert(msg, category="Śmieci")
                         new_milestones.add("smieci_day_of")
 
                 # --- 2. REGUŁY DLA POZOSTAŁYCH WYDARZEŃ ---
@@ -200,7 +230,7 @@ async def check_and_send_calendar_reminders():
                             f"• {icon} <b>{title}</b> <i>[{category}]</i>\n"
                             f"• Termin: <b>{ev_date}</b>{time_info}"
                         )
-                        await send_telegram_alert(msg)
+                        await send_telegram_alert(msg, category=category)
                         new_milestones.add("7d_before")
 
                     # 1 dzień przed
@@ -210,7 +240,7 @@ async def check_and_send_calendar_reminders():
                             f"• {icon} <b>{title}</b> <i>[{category}]</i>\n"
                             f"• Termin: <b>{ev_date}</b>{time_info}"
                         )
-                        await send_telegram_alert(msg)
+                        await send_telegram_alert(msg, category=category)
                         new_milestones.add("1d_before")
 
                     # 1h przed wydarzeniem (o ile podano godzinę)
@@ -227,7 +257,7 @@ async def check_and_send_calendar_reminders():
                                     f"• {icon} <b>{title}</b> <i>[{category}]</i>\n"
                                     f"• Godzina rozpoczęcia: <b>{ev_time}</b>!"
                                 )
-                                await send_telegram_alert(msg)
+                                await send_telegram_alert(msg, category=category)
                                 new_milestones.add("1h_before")
 
                 # Zapisujemy odhaczone powiadomienia w Supabase
@@ -464,7 +494,8 @@ async def create_biz_task(payload: BizTaskCreate):
         resp.raise_for_status()
     if payload.priority == "Krytyczny":
         await send_telegram_alert(
-            f"🚨 <b>Pilne zadanie firmowe:</b>\nKlient: {payload.client_name}\nTyp: {payload.task_type}\nTermin: {payload.due_date}"
+            f"🚨 <b>Pilne zadanie firmowe:</b>\nKlient: {payload.client_name}\nTyp: {payload.task_type}\nTermin: {payload.due_date}",
+            category="Bartosz"
         )
     await ws_manager.broadcast_refresh("biz")
     return {"status": "ok"}
