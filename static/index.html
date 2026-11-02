@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>Nexus Hub</title>
-  <meta name="theme-color" content="#090d16">
+  <meta name="theme-color" content="#06080e">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Nexus Hub">
@@ -12,10 +12,10 @@
   <link rel="icon" type="image/svg+xml" href="/static/icon.svg">
   <link rel="apple-touch-icon" href="/static/icon.svg">
 
-  <!-- Plus Jakarta Sans Font -->
+  <!-- Google Fonts: Syne (Display) & Plus Jakarta Sans (Body) -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Syne:wght@700;800&display=swap" rel="stylesheet">
 
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -25,15 +25,14 @@
       theme: {
         extend: {
           fontFamily: {
-            sans: ['"Plus Jakarta Sans"', 'system-ui', '-apple-system', 'sans-serif'],
+            display: ['"Syne"', 'sans-serif'],
+            sans: ['"Plus Jakarta Sans"', 'system-ui', 'sans-serif'],
           },
           colors: {
-            surface: {
-              DEFAULT: '#090d16',
-              card: '#111726',
-              cardHover: '#161e31',
-              border: 'rgba(255, 255, 255, 0.08)',
-              input: '#0b101c',
+            brand: {
+              emerald: '#10b981',
+              cyan: '#06b6d4',
+              rose: '#f43f5e',
             }
           }
         }
@@ -41,64 +40,84 @@
     }
   </script>
   <style>
+    :root {
+      --bg-base: #06080e;
+      --card-bg: rgba(13, 18, 30, 0.78);
+      --card-border: rgba(255, 255, 255, 0.08);
+      --card-glow: rgba(16, 185, 129, 0.12);
+    }
     body {
       padding-top: env(safe-area-inset-top);
       padding-bottom: env(safe-area-inset-bottom);
-      background-color: #090d16;
+      background-color: var(--bg-base);
       background-image: 
-        radial-gradient(circle at 50% 0%, rgba(59, 130, 246, 0.15) 0%, transparent 45%),
-        radial-gradient(circle at 80% 20%, rgba(139, 92, 246, 0.08) 0%, transparent 40%);
+        radial-gradient(circle at 50% -5%, rgba(16, 185, 129, 0.14) 0%, transparent 45%),
+        radial-gradient(circle at 90% 15%, rgba(99, 102, 241, 0.10) 0%, transparent 40%),
+        radial-gradient(circle at 10% 80%, rgba(244, 63, 94, 0.06) 0%, transparent 40%);
       background-attachment: fixed;
+    }
+    .glass-card {
+      background: var(--card-bg);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      border: 1px solid var(--card-border);
+      box-shadow: 
+        inset 0 1px 1px 0 rgba(255, 255, 255, 0.1),
+        0 20px 40px -15px rgba(0, 0, 0, 0.6);
     }
     .custom-scrollbar::-webkit-scrollbar {
       width: 4px;
     }
     .custom-scrollbar::-webkit-scrollbar-thumb {
-      background-color: rgba(255, 255, 255, 0.1);
+      background-color: rgba(255, 255, 255, 0.12);
       border-radius: 9999px;
     }
-    /* Fast click on touch devices */
     * {
       touch-action: manipulation;
     }
+    @keyframes pulse-subtle {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.6; }
+    }
+    .animate-pulse-subtle {
+      animation: pulse-subtle 2.5s infinite;
+    }
   </style>
 </head>
-<body class="text-slate-100 min-h-screen flex flex-col font-sans pb-24 select-none md:select-auto antialiased">
+<body class="text-slate-100 min-h-screen flex flex-col font-sans pb-24 antialiased selection:bg-emerald-500 selection:text-black">
 
-  <!-- TOP HEADER -->
-  <header class="sticky top-0 z-40 bg-[#090d16]/80 backdrop-blur-xl border-b border-white/[0.06] px-4 py-3.5">
+  <!-- TOP APP BAR -->
+  <header class="sticky top-0 z-40 bg-[#06080e]/85 backdrop-blur-2xl border-b border-white/[0.06] px-4 py-3">
     <div class="max-w-3xl mx-auto flex items-center justify-between">
       
-      <!-- Logo & App Name -->
+      <!-- Brand & Status -->
       <div class="flex items-center gap-3">
-        <div class="w-10 h-10 rounded-2xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-violet-600 flex items-center justify-center shadow-lg shadow-blue-500/25 ring-1 ring-white/20">
-          <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
-          </svg>
+        <div class="w-10 h-10 rounded-2xl bg-gradient-to-tr from-emerald-500 via-teal-500 to-cyan-500 p-[1px] shadow-lg shadow-emerald-500/20">
+          <div class="w-full h-full bg-[#080d1a] rounded-[15px] flex items-center justify-center">
+            <span class="text-base">⚡</span>
+          </div>
         </div>
         <div>
           <div class="flex items-center gap-2">
-            <h1 class="text-base font-extrabold tracking-tight text-white">Nexus Hub</h1>
-            <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-400 border border-blue-500/30">CLOUD</span>
+            <h1 class="font-display font-extrabold text-base tracking-wider text-white uppercase">Nexus</h1>
+            <span class="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 tracking-widest font-mono">LIVE</span>
           </div>
           <p id="weather-quick" class="text-xs text-slate-400 font-medium">Ładowanie pogody...</p>
         </div>
       </div>
 
-      <!-- Segmented Mode Control & PIN -->
+      <!-- Segmented Mode Control (iOS Style) & Pin -->
       <div class="flex items-center gap-2">
-        <!-- Segmented Tab Switcher (iOS Style) -->
-        <div class="bg-[#111726] p-1 rounded-2xl border border-white/[0.08] flex items-center shadow-inner">
-          <button onclick="setTab('home')" id="tab-btn-home" class="px-4 py-1.5 rounded-xl text-xs font-bold transition-all bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/20">
-            🏠 Dom
+        <div class="bg-[#0b1120] p-1 rounded-2xl border border-white/[0.08] flex items-center shadow-inner">
+          <button onclick="setTab('home')" id="tab-btn-home" class="px-4 py-1.5 rounded-xl text-xs font-bold transition-all bg-emerald-500 text-black shadow-md shadow-emerald-500/25">
+            Dom
           </button>
           <button onclick="setTab('biz')" id="tab-btn-biz" class="px-4 py-1.5 rounded-xl text-xs font-semibold transition-all text-slate-400 hover:text-white">
-            💼 Firma
+            Firma
           </button>
         </div>
 
-        <!-- Lock / PIN button -->
-        <button onclick="changePinPrompt()" title="Zmień kod PIN" class="p-2.5 rounded-2xl bg-[#111726] hover:bg-[#161e31] border border-white/[0.08] text-slate-400 hover:text-white transition-all active:scale-95 shadow-sm">
+        <button onclick="changePinPrompt()" title="Zmień kod PIN" class="p-2 rounded-2xl bg-[#0b1120] hover:bg-[#131b2e] border border-white/[0.08] text-slate-400 hover:text-white transition-all active:scale-95">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
           </svg>
@@ -114,94 +133,121 @@
     <!-- ==================== TAB: DOM ==================== -->
     <div id="section-home" class="space-y-5">
 
-      <!-- WEATHER CARD -->
-      <div class="relative bg-gradient-to-br from-[#111726]/90 to-[#0e1422]/90 rounded-3xl border border-white/[0.08] p-5 shadow-2xl backdrop-blur-xl overflow-hidden">
+      <!-- WEATHER DASHBOARD CARD -->
+      <div class="glass-card rounded-3xl p-5 relative overflow-hidden">
+        <div class="absolute -right-8 -top-8 w-40 h-40 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none"></div>
         <div class="flex items-center justify-between relative z-10">
           <div>
             <div class="flex items-center gap-2">
-              <span class="text-[11px] font-bold tracking-wider uppercase text-blue-400">Warunki atmosferyczne</span>
+              <span class="text-[10px] font-bold tracking-widest uppercase text-emerald-400">Warunki atmosferyczne</span>
               <span class="text-[10px] text-slate-400 px-2 py-0.5 rounded-full bg-white/[0.04] border border-white/[0.06]">Gniezno</span>
             </div>
             <div class="mt-2 flex items-baseline gap-3">
-              <span id="weather-temp" class="text-4xl font-extrabold tracking-tight text-white font-sans">--°C</span>
-              <span id="weather-rain" class="text-xs font-semibold text-cyan-400 px-2 py-1 rounded-lg bg-cyan-500/10 border border-cyan-500/20">
+              <span id="weather-temp" class="font-display text-4xl sm:text-5xl font-extrabold tracking-tight text-white">--°C</span>
+              <span id="weather-rain" class="text-xs font-bold text-cyan-400 px-2.5 py-1 rounded-xl bg-cyan-500/10 border border-cyan-500/20">
                 💧 --% opadów
               </span>
             </div>
           </div>
           <div class="text-right">
-            <div class="text-xs text-slate-400 font-medium">Wiatr</div>
-            <div id="weather-wind" class="text-lg font-bold text-slate-200 mt-1">-- km/h</div>
+            <div class="text-xs text-slate-400 font-medium">Prędkość wiatru</div>
+            <div id="weather-wind" class="font-display text-lg sm:text-xl font-bold text-slate-200 mt-1">-- km/h</div>
           </div>
         </div>
       </div>
 
-      <!-- LISTA ZAKUPÓW CARD -->
-      <div class="bg-[#111726]/90 rounded-3xl border border-white/[0.08] p-5 shadow-2xl backdrop-blur-xl space-y-4">
+      <!-- SHOPPING LIST CARD -->
+      <div class="glass-card rounded-3xl p-5 space-y-4">
         
-        <!-- Header & Action -->
+        <!-- Shopping Header -->
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-3">
-            <div class="w-9 h-9 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-500 flex items-center justify-center text-white shadow-lg shadow-emerald-500/20">
+            <div class="w-9 h-9 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center text-black font-bold shadow-lg shadow-emerald-500/20">
               🛒
             </div>
             <div>
-              <h2 class="text-base font-bold text-white flex items-center gap-2">
+              <h2 class="font-display font-extrabold text-base tracking-wide text-white flex items-center gap-2">
                 Lista Zakupów
-                <span id="shopping-badge-count" class="text-xs font-bold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                <span id="shopping-badge-count" class="text-xs font-sans font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
                   0
                 </span>
               </h2>
-              <p class="text-xs text-slate-400">Synchronizacja na żywo</p>
+              <p class="text-xs text-slate-400">Wspólna synchronizacja w czasie rzeczywistym</p>
             </div>
           </div>
 
-          <button onclick="clearBoughtItems()" id="clear-bought-btn" class="text-xs px-3 py-1.5 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] text-slate-300 hover:text-white border border-white/[0.08] transition-all active:scale-95">
-            Wyczyść kupione
+          <button onclick="clearBoughtItems()" id="clear-bought-btn" class="text-xs px-3 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.09] text-slate-300 hover:text-white border border-white/[0.08] transition-all active:scale-95 flex items-center gap-1.5">
+            <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+            </svg>
+            <span>Wyczyść kupione</span>
           </button>
         </div>
 
-        <!-- Add Item Form (Sleek unified card) -->
-        <form onsubmit="handleShoppingSubmit(event)" class="bg-[#0b101c] p-1.5 rounded-2xl border border-white/[0.08] flex flex-col sm:flex-row gap-1.5 shadow-inner focus-within:border-blue-500/60 focus-within:ring-2 focus-within:ring-blue-500/20 transition-all">
-          <input 
-            type="text" 
-            id="shopping-input" 
-            placeholder="Co kupić? (np. Mleko, Kawa)..." 
-            required 
-            enterkeyhint="next"
-            class="flex-1 bg-transparent border-0 px-3.5 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none"
-          >
-          <div class="flex items-center gap-1.5">
+        <!-- Add Item Form (Sculpted Glass Input) -->
+        <div class="space-y-2">
+          <form onsubmit="handleShoppingSubmit(event)" class="bg-[#090e1a] p-1.5 rounded-2xl border border-white/[0.08] flex flex-col sm:flex-row gap-1.5 shadow-inner focus-within:border-emerald-500/50 focus-within:ring-2 focus-within:ring-emerald-500/20 transition-all">
             <input 
               type="text" 
-              id="shopping-qty" 
-              placeholder="Ilość (np. 2 op., 1 kg)" 
-              enterkeyhint="done"
-              class="w-full sm:w-36 bg-white/[0.03] border border-white/[0.06] rounded-xl px-3 py-2 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-blue-500/50"
+              id="shopping-input" 
+              placeholder="Co trzeba kupić?..." 
+              required 
+              enterkeyhint="next"
+              class="flex-1 bg-transparent border-0 px-3.5 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none"
             >
-            <button 
-              type="submit" 
-              class="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold px-4 py-2 rounded-xl text-sm transition-all shadow-md shadow-blue-500/20 active:scale-95 whitespace-nowrap flex items-center gap-1.5"
-            >
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/>
-              </svg>
-              <span>Dodaj</span>
-            </button>
-          </div>
-        </form>
+            <div class="flex items-center gap-1.5">
+              <input 
+                type="text" 
+                id="shopping-qty" 
+                placeholder="Ilość (np. 2 op., 1 kg)" 
+                enterkeyhint="done"
+                class="w-full sm:w-36 bg-white/[0.03] border border-white/[0.06] rounded-xl px-3 py-2 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-emerald-500/40"
+              >
+              <button 
+                type="submit" 
+                class="bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-black font-extrabold px-4 py-2 rounded-xl text-sm transition-all shadow-md shadow-emerald-500/25 whitespace-nowrap flex items-center gap-1"
+              >
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/>
+                </svg>
+                <span>Dodaj</span>
+              </button>
+            </div>
+          </form>
 
-        <!-- Telegram Info Bar -->
-        <div class="flex items-center justify-between p-2.5 rounded-2xl bg-sky-500/[0.06] border border-sky-500/15 text-xs text-sky-300">
-          <div class="flex items-center gap-2 min-w-0">
-            <span class="text-sm">✈️</span>
-            <span class="truncate">Bot Telegram: wyślij <code class="font-mono bg-sky-950/80 px-1.5 py-0.5 rounded text-white font-bold">/kup mleko, chleb</code></span>
+          <!-- Quick Suggestions Chips (Tap to add in 1 click!) -->
+          <div class="flex items-center gap-1.5 overflow-x-auto custom-scrollbar py-1 text-xs select-none">
+            <span class="text-slate-500 text-[11px] font-semibold flex-shrink-0">Szybkie:</span>
+            <button onclick="quickAdd('Chleb')" class="px-2.5 py-1 rounded-xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.06] text-slate-300 transition-all active:scale-95 flex-shrink-0">+ Chleb</button>
+            <button onclick="quickAdd('Mleko', '2 op.')" class="px-2.5 py-1 rounded-xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.06] text-slate-300 transition-all active:scale-95 flex-shrink-0">+ Mleko</button>
+            <button onclick="quickAdd('Masło')" class="px-2.5 py-1 rounded-xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.06] text-slate-300 transition-all active:scale-95 flex-shrink-0">+ Masło</button>
+            <button onclick="quickAdd('Kawa')" class="px-2.5 py-1 rounded-xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.06] text-slate-300 transition-all active:scale-95 flex-shrink-0">+ Kawa</button>
+            <button onclick="quickAdd('Jajka', '10 szt')" class="px-2.5 py-1 rounded-xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.06] text-slate-300 transition-all active:scale-95 flex-shrink-0">+ Jajka</button>
+            <button onclick="quickAdd('Woda', 'zgrzewka')" class="px-2.5 py-1 rounded-xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.06] text-slate-300 transition-all active:scale-95 flex-shrink-0">+ Woda</button>
           </div>
-          <span class="text-[10px] text-sky-400 font-semibold uppercase tracking-wider px-2 py-0.5 bg-sky-500/10 rounded-full border border-sky-500/20 flex-shrink-0 ml-2">Aktywny</span>
         </div>
 
-        <!-- Shopping List Items Container -->
-        <div id="shopping-list" class="space-y-2 max-h-[30rem] overflow-y-auto custom-scrollbar pr-1">
+        <!-- Telegram Info Bar with Wife status -->
+        <div class="flex items-center justify-between p-3 rounded-2xl bg-sky-500/[0.06] border border-sky-500/15 text-xs text-sky-300">
+          <div class="flex items-center gap-2 min-w-0">
+            <span class="text-base">✈️</span>
+            <div class="truncate">
+              <span>Bot Telegram aktywny! Ty i <b>Żona</b> możecie pisać: </span>
+              <code class="font-mono bg-sky-950/80 px-1.5 py-0.5 rounded text-white font-bold">/kup mleko, ser</code>
+            </div>
+          </div>
+          <span class="text-[10px] text-sky-300 font-bold px-2 py-0.5 rounded-full bg-sky-500/10 border border-sky-500/20 flex-shrink-0 ml-2">2 OSOBY</span>
+        </div>
+
+        <!-- Shopping Filter Tabs -->
+        <div class="flex items-center gap-2 pt-1">
+          <button onclick="setShoppingFilter('all')" id="filter-all" class="text-xs font-bold px-3 py-1 rounded-xl bg-white/[0.08] text-white transition-all">Wszystkie</button>
+          <button onclick="setShoppingFilter('todo')" id="filter-todo" class="text-xs font-semibold px-3 py-1 rounded-xl text-slate-400 hover:text-white transition-all">Do kupienia</button>
+          <button onclick="setShoppingFilter('done')" id="filter-done" class="text-xs font-semibold px-3 py-1 rounded-xl text-slate-400 hover:text-white transition-all">Kupione</button>
+        </div>
+
+        <!-- Items List -->
+        <div id="shopping-list" class="space-y-2 max-h-[32rem] overflow-y-auto custom-scrollbar pr-1">
           <div class="text-center py-10 text-sm text-slate-500">Pobieranie listy zakupów...</div>
         </div>
 
@@ -214,28 +260,28 @@
 
       <!-- STATS BAR -->
       <div class="grid grid-cols-3 gap-3">
-        <div class="bg-[#111726]/90 rounded-2xl border border-white/[0.08] p-4 text-center backdrop-blur-xl">
+        <div class="glass-card rounded-2xl p-4 text-center">
           <span class="text-xs text-slate-400 font-medium">Wszystkie sprawy</span>
-          <div id="biz-total-count" class="text-2xl font-extrabold text-white mt-1">0</div>
+          <div id="biz-total-count" class="font-display text-2xl font-extrabold text-white mt-1">0</div>
         </div>
-        <div class="bg-[#111726]/90 rounded-2xl border border-white/[0.08] p-4 text-center backdrop-blur-xl">
+        <div class="glass-card rounded-2xl p-4 text-center">
           <span class="text-xs text-amber-400 font-medium">W toku</span>
-          <div id="biz-todo-count" class="text-2xl font-extrabold text-amber-400 mt-1">0</div>
+          <div id="biz-todo-count" class="font-display text-2xl font-extrabold text-amber-400 mt-1">0</div>
         </div>
-        <div class="bg-[#111726]/90 rounded-2xl border border-white/[0.08] p-4 text-center backdrop-blur-xl">
+        <div class="glass-card rounded-2xl p-4 text-center">
           <span class="text-xs text-rose-400 font-medium">Pilne</span>
-          <div id="biz-urgent-count" class="text-2xl font-extrabold text-rose-400 mt-1">0</div>
+          <div id="biz-urgent-count" class="font-display text-2xl font-extrabold text-rose-400 mt-1">0</div>
         </div>
       </div>
 
       <!-- ADD TASK FORM -->
-      <div class="bg-[#111726]/90 rounded-3xl border border-white/[0.08] p-5 shadow-2xl backdrop-blur-xl space-y-4">
+      <div class="glass-card rounded-3xl p-5 space-y-4">
         <div class="flex items-center gap-3">
-          <div class="w-9 h-9 rounded-2xl bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center text-white shadow-lg shadow-indigo-500/20">
+          <div class="w-9 h-9 rounded-2xl bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center text-white shadow-lg shadow-indigo-500/20 font-bold">
             📋
           </div>
           <div>
-            <h2 class="text-base font-bold text-white">Nowa Sprawa / Polisa</h2>
+            <h2 class="font-display font-extrabold text-base tracking-wide text-white">Nowa Sprawa / Polisa</h2>
             <p class="text-xs text-slate-400">Rejestr spraw biznesowych w Supabase</p>
           </div>
         </div>
@@ -249,14 +295,14 @@
                 id="biz-client" 
                 placeholder="np. Jan Kowalski" 
                 required 
-                class="w-full bg-[#0b101c] border border-white/[0.08] rounded-xl px-3.5 py-2.5 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                class="w-full bg-[#090e1a] border border-white/[0.08] rounded-xl px-3.5 py-2.5 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
               >
             </div>
             <div>
               <label class="block text-xs font-semibold text-slate-400 mb-1">Typ zadania</label>
               <select 
                 id="biz-type" 
-                class="w-full bg-[#0b101c] border border-white/[0.08] rounded-xl px-3.5 py-2.5 text-sm text-slate-300 focus:outline-none focus:border-indigo-500"
+                class="w-full bg-[#090e1a] border border-white/[0.08] rounded-xl px-3.5 py-2.5 text-sm text-slate-300 focus:outline-none focus:border-indigo-500"
               >
                 <option value="Wznowienie polisy">📄 Wznowienie polisy</option>
                 <option value="Nowa oferta">💼 Nowa oferta</option>
@@ -275,25 +321,25 @@
                 type="date" 
                 id="biz-date" 
                 required 
-                class="w-full bg-[#0b101c] border border-white/[0.08] rounded-xl px-3.5 py-2 text-sm text-slate-300 focus:outline-none focus:border-indigo-500"
+                class="w-full bg-[#090e1a] border border-white/[0.08] rounded-xl px-3.5 py-2.5 text-sm text-slate-300 focus:outline-none focus:border-indigo-500"
               >
             </div>
             <div>
               <label class="block text-xs font-semibold text-slate-400 mb-1">Priorytet</label>
               <select 
                 id="biz-priority" 
-                class="w-full bg-[#0b101c] border border-white/[0.08] rounded-xl px-3.5 py-2 text-sm text-slate-300 focus:outline-none focus:border-indigo-500"
+                class="w-full bg-[#090e1a] border border-white/[0.08] rounded-xl px-3.5 py-2.5 text-sm text-slate-300 focus:outline-none focus:border-indigo-500"
               >
                 <option value="Normalny">Normalny</option>
                 <option value="Wysoki">Wysoki</option>
-                <option value="Krytyczny">🚨 Krytyczny (Alert Telegram)</option>
+                <option value="Krytyczny">🚨 Krytyczny (Alert Telegram do 2 osób)</option>
               </select>
             </div>
           </div>
 
           <button 
             type="submit" 
-            class="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold py-2.5 rounded-xl text-sm transition-all shadow-lg shadow-indigo-600/20 active:scale-98"
+            class="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold py-2.5 rounded-xl text-sm transition-all shadow-lg shadow-indigo-600/25 active:scale-98"
           >
             Zapisz sprawę
           </button>
@@ -301,8 +347,8 @@
       </div>
 
       <!-- BIZ TASKS LIST -->
-      <div class="bg-[#111726]/90 rounded-3xl border border-white/[0.08] p-5 shadow-2xl backdrop-blur-xl space-y-3">
-        <h3 class="text-sm font-bold text-slate-300">Lista Spraw i Wznowień</h3>
+      <div class="glass-card rounded-3xl p-5 space-y-3">
+        <h3 class="font-display font-bold text-sm tracking-wide text-slate-300">Lista Spraw i Wznowień</h3>
         <div id="biz-tasks-list" class="space-y-2 max-h-[30rem] overflow-y-auto custom-scrollbar pr-1">
           <div class="text-center py-8 text-sm text-slate-500">Pobieranie spraw...</div>
         </div>
@@ -312,33 +358,33 @@
 
   </main>
 
-  <!-- BOTTOM STATUS BAR -->
-  <footer class="fixed bottom-0 left-0 right-0 z-40 bg-[#090d16]/90 backdrop-blur-xl border-t border-white/[0.06] px-4 py-2.5">
+  <!-- BOTTOM FLOATING DOCK -->
+  <footer class="fixed bottom-0 left-0 right-0 z-40 bg-[#06080e]/90 backdrop-blur-2xl border-t border-white/[0.06] px-4 py-2.5">
     <div class="max-w-3xl mx-auto flex items-center justify-between">
       
-      <!-- WebSocket Live Status -->
+      <!-- WebSocket Live Indicator -->
       <div class="flex items-center gap-2">
         <span id="ws-indicator" class="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse"></span>
-        <span id="ws-status" class="text-xs font-semibold text-slate-400">Łączenie...</span>
+        <span id="ws-status" class="text-xs font-bold text-slate-400 font-mono">Łączenie...</span>
       </div>
 
-      <!-- Quick Item Count / Summary -->
-      <div id="bottom-summary" class="text-xs text-slate-400 font-medium hidden sm:block">
+      <!-- Live Items Counter -->
+      <div id="bottom-summary" class="text-xs text-slate-400 font-semibold hidden sm:block">
         Wszystko aktualne
       </div>
 
-      <!-- PWA Install Button -->
-      <button id="pwa-install-btn" class="hidden text-xs bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-xl font-bold shadow-md transition-all active:scale-95">
+      <!-- Install PWA Button -->
+      <button id="pwa-install-btn" class="hidden text-xs bg-emerald-500 hover:bg-emerald-400 text-black px-3 py-1.5 rounded-xl font-extrabold shadow-md transition-all active:scale-95">
         📲 Dodaj do ekranu
       </button>
 
     </div>
   </footer>
 
-  <!-- SCRIPT -->
+  <!-- JAVASCRIPT -->
   <script>
-    // App State
     let activeTab = 'home';
+    let shoppingFilter = 'all';
     let appPin = localStorage.getItem('nexus_app_pin') || '9045';
     let socket = null;
     let deferredPrompt = null;
@@ -373,14 +419,22 @@
       if (tab === 'home') {
         homeSec.classList.remove('hidden');
         bizSec.classList.add('hidden');
-        dHomeBtn.className = "px-4 py-1.5 rounded-xl text-xs font-bold transition-all bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/20";
+        dHomeBtn.className = "px-4 py-1.5 rounded-xl text-xs font-bold transition-all bg-emerald-500 text-black shadow-md shadow-emerald-500/25";
         dBizBtn.className = "px-4 py-1.5 rounded-xl text-xs font-semibold transition-all text-slate-400 hover:text-white";
       } else {
         homeSec.classList.add('hidden');
         bizSec.classList.remove('hidden');
-        dBizBtn.className = "px-4 py-1.5 rounded-xl text-xs font-bold transition-all bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-md shadow-indigo-500/20";
+        dBizBtn.className = "px-4 py-1.5 rounded-xl text-xs font-bold transition-all bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-md shadow-indigo-500/25";
         dHomeBtn.className = "px-4 py-1.5 rounded-xl text-xs font-semibold transition-all text-slate-400 hover:text-white";
       }
+    }
+
+    function setShoppingFilter(filter) {
+      shoppingFilter = filter;
+      document.getElementById('filter-all').className = filter === 'all' ? "text-xs font-bold px-3 py-1 rounded-xl bg-white/[0.12] text-white transition-all shadow" : "text-xs font-semibold px-3 py-1 rounded-xl text-slate-400 hover:text-white transition-all";
+      document.getElementById('filter-todo').className = filter === 'todo' ? "text-xs font-bold px-3 py-1 rounded-xl bg-white/[0.12] text-white transition-all shadow" : "text-xs font-semibold px-3 py-1 rounded-xl text-slate-400 hover:text-white transition-all";
+      document.getElementById('filter-done').className = filter === 'done' ? "text-xs font-bold px-3 py-1 rounded-xl bg-white/[0.12] text-white transition-all shadow" : "text-xs font-semibold px-3 py-1 rounded-xl text-slate-400 hover:text-white transition-all";
+      renderShoppingList();
     }
 
     // --- POGODA ---
@@ -405,7 +459,7 @@
       }
     }
 
-    // --- ZAKUPY (OPTIMISTIC UI - 0ms OPÓŹNIENIA) ---
+    // --- ZAKUPY (0ms OPTIMISTIC UI) ---
     async function fetchShopping(showLoading = false) {
       const container = document.getElementById('shopping-list');
       if (showLoading && shoppingItems.length === 0) {
@@ -454,43 +508,56 @@
 
       if (!shoppingItems || shoppingItems.length === 0) {
         container.innerHTML = `
-          <div class="text-center py-12 px-4 rounded-2xl bg-white/[0.02] border border-white/[0.04]">
-            <div class="text-3xl mb-2">🎉</div>
-            <div class="text-sm font-semibold text-slate-300">Wszystko kupione!</div>
+          <div class="text-center py-12 px-4 rounded-3xl bg-white/[0.02] border border-white/[0.04]">
+            <div class="text-4xl mb-2">🎉</div>
+            <div class="font-display font-bold text-base text-slate-200">Koszyk jest pusty!</div>
             <div class="text-xs text-slate-500 mt-1">Dodaj produkty powyżej lub wyślij /kup na Telegramie.</div>
           </div>
         `;
         return;
       }
 
-      container.innerHTML = shoppingItems.map(item => {
+      // Filter
+      let displayedItems = shoppingItems;
+      if (shoppingFilter === 'todo') displayedItems = shoppingItems.filter(i => !i.is_bought);
+      if (shoppingFilter === 'done') displayedItems = shoppingItems.filter(i => i.is_bought);
+
+      if (displayedItems.length === 0) {
+        container.innerHTML = `<div class="text-center py-8 text-sm text-slate-500">Brak pozycji w tym widoku.</div>`;
+        return;
+      }
+
+      container.innerHTML = displayedItems.map(item => {
         const isBought = !!item.is_bought;
+        const isWife = item.added_by && item.added_by.toLowerCase().includes('żona');
+        const isTg = item.added_by && item.added_by.toLowerCase().includes('tg');
+
         return `
           <div class="group flex items-center justify-between p-3.5 rounded-2xl border transition-all duration-150 ${
             isBought 
-              ? 'bg-white/[0.02] border-white/[0.04] opacity-45' 
-              : 'bg-[#0e1422] hover:bg-[#131b2e] border-white/[0.07] shadow-sm'
+              ? 'bg-white/[0.02] border-white/[0.04] opacity-40' 
+              : 'bg-[#0b101c] hover:bg-[#0f1728] border-white/[0.07] shadow-sm'
           }">
             
             <!-- Checkbox & Text (Clickable area) -->
             <div class="flex items-center gap-3.5 cursor-pointer flex-1 min-w-0" onclick="toggleShoppingItem(${item.id})">
               
-              <!-- Custom Styled Checkbox Button -->
-              <div class="w-6 h-6 rounded-xl flex items-center justify-center transition-all duration-150 flex-shrink-0 ${
+              <!-- Checkbox Icon -->
+              <div class="w-6 h-6 rounded-full flex items-center justify-center transition-all duration-150 flex-shrink-0 ${
                 isBought 
-                  ? 'bg-blue-600 border-2 border-blue-600 text-white shadow-md shadow-blue-500/30' 
-                  : 'border-2 border-slate-700 bg-slate-900/60 group-hover:border-blue-500/60'
+                  ? 'bg-emerald-500 border-2 border-emerald-500 text-black shadow-md shadow-emerald-500/30' 
+                  : 'border-2 border-slate-700 bg-slate-900/60 group-hover:border-emerald-500/70'
               }">
                 ${isBought ? `
-                  <svg class="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/>
+                  <svg class="w-3.5 h-3.5 text-black font-extrabold stroke-[3]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
                   </svg>
                 ` : ''}
               </div>
 
-              <!-- Product Name & Quantity Badge -->
+              <!-- Item Name & Quantity -->
               <div class="flex flex-wrap items-baseline gap-2 min-w-0">
-                <span class="text-sm font-semibold transition-all duration-150 ${
+                <span class="text-sm font-bold tracking-wide transition-all duration-150 ${
                   isBought 
                     ? 'line-through text-slate-500' 
                     : 'text-slate-100 group-hover:text-white'
@@ -499,20 +566,31 @@
                 </span>
                 
                 ${item.quantity && item.quantity !== '1' ? `
-                  <span class="text-[11px] font-bold px-2 py-0.5 rounded-lg bg-blue-500/15 text-blue-300 border border-blue-500/30">
+                  <span class="text-[11px] font-mono font-bold px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
                     ${escapeHtml(item.quantity)}
                   </span>
                 ` : ''}
               </div>
             </div>
 
-            <!-- Author / Sender Badge -->
+            <!-- Badges & Single Delete button -->
             <div class="flex items-center gap-2 flex-shrink-0 ml-2">
-              ${item.added_by && item.added_by !== 'Panel' ? `
+              ${isWife ? `
+                <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-300 border border-rose-500/30 flex items-center gap-1 shadow-sm">
+                  🌸 Żona
+                </span>
+              ` : (item.added_by && item.added_by !== 'Panel' ? `
                 <span class="text-[10px] font-semibold text-slate-400 bg-white/[0.04] border border-white/[0.08] px-2 py-0.5 rounded-md">
                   ${escapeHtml(item.added_by)}
                 </span>
-              ` : ''}
+              ` : '')}
+
+              <!-- Trash button (single delete) -->
+              <button onclick="deleteSingleItem(event, ${item.id})" title="Usuń produkt" class="opacity-30 group-hover:opacity-100 p-1.5 rounded-lg hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 transition-all">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                </svg>
+              </button>
             </div>
 
           </div>
@@ -520,32 +598,35 @@
       }).join('');
     }
 
-    // 0ms INSTANT TOGGLE (Optimistic UI)
+    // 0ms TOGGLE
     function toggleShoppingItem(id) {
       const item = shoppingItems.find(i => i.id === id);
       if (!item) return;
 
-      // Haptic feedback na telefonie
       if ('vibrate' in navigator) navigator.vibrate(12);
 
-      // 1. Zmiana w 0ms na ekranie
       item.is_bought = !item.is_bought;
       renderShoppingList();
 
-      // 2. Wysłanie do serwera w tle
       fetch(`/api/home/shopping/${id}/toggle`, {
         method: 'PATCH',
         headers: getHeaders()
-      }).then(res => {
-        if (!res.ok) throw new Error('Status ' + res.status);
-      }).catch(err => {
-        // W razie błędu wycofaj
+      }).catch(() => {
         item.is_bought = !item.is_bought;
         renderShoppingList();
       });
     }
 
-    // 0ms INSTANT ADD (Optimistic UI)
+    // Quick suggestions helper
+    function quickAdd(item, qty = '1') {
+      const input = document.getElementById('shopping-input');
+      const qtyInput = document.getElementById('shopping-qty');
+      input.value = item;
+      qtyInput.value = qty !== '1' ? qty : '';
+      input.focus();
+    }
+
+    // 0ms ADD
     function handleShoppingSubmit(e) {
       e.preventDefault();
       const input = document.getElementById('shopping-input');
@@ -554,7 +635,6 @@
       let qty = qtyInput ? qtyInput.value.trim() : '';
       if (!text) return;
 
-      // Rozpoznanie "Mleko - 2 opakowania"
       if (!qty && text.includes(' - ')) {
         const parts = text.split(' - ');
         text = parts[0].trim();
@@ -571,7 +651,6 @@
         added_by: 'Panel'
       };
 
-      // Dodaj natychmiast na samą górę
       shoppingItems.unshift(optimisticItem);
       renderShoppingList();
       if ('vibrate' in navigator) navigator.vibrate(18);
@@ -592,7 +671,27 @@
       });
     }
 
-    // 0ms INSTANT CLEAR BOUGHT
+    // 0ms SINGLE DELETE
+    function deleteSingleItem(e, id) {
+      e.stopPropagation();
+      const item = shoppingItems.find(i => i.id === id);
+      if (!item) return;
+
+      const previousState = [...shoppingItems];
+      shoppingItems = shoppingItems.filter(i => i.id !== id);
+      renderShoppingList();
+      if ('vibrate' in navigator) navigator.vibrate(10);
+
+      fetch(`/api/home/shopping/${id}`, {
+        method: 'DELETE',
+        headers: getHeaders()
+      }).catch(() => {
+        shoppingItems = previousState;
+        renderShoppingList();
+      });
+    }
+
+    // 0ms CLEAR BOUGHT
     function clearBoughtItems() {
       const boughtCount = shoppingItems.filter(i => i.is_bought).length;
       if (boughtCount === 0) return;
@@ -606,8 +705,6 @@
       fetch('/api/home/shopping/clear-bought', {
         method: 'DELETE',
         headers: getHeaders()
-      }).then(res => {
-        if (!res.ok) throw new Error('Status ' + res.status);
       }).catch(() => {
         shoppingItems = previousState;
         renderShoppingList();
@@ -660,7 +757,7 @@
               ? 'bg-white/[0.02] border-white/[0.04] opacity-50' 
               : (isUrgent 
                   ? 'bg-rose-500/[0.08] border-rose-500/30' 
-                  : 'bg-[#0e1422] border-white/[0.07]')
+                  : 'bg-[#0b101c] border-white/[0.07]')
           } flex items-center justify-between gap-3">
             <div class="flex items-start gap-3 flex-1 min-w-0 cursor-pointer" onclick="toggleBizTask(${task.id})">
               <div class="mt-0.5 w-5 h-5 rounded-lg flex items-center justify-center border transition-all ${
@@ -747,7 +844,7 @@
 
       socket.onopen = () => {
         indicator.className = "w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400/50";
-        status.innerText = "Zsynchronizowano (Na żywo)";
+        status.innerText = "Na żywo • WebSocket";
       };
 
       socket.onmessage = (event) => {
@@ -764,7 +861,7 @@
 
       socket.onclose = () => {
         indicator.className = "w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse";
-        status.innerText = "Ponawianie połączenia...";
+        status.innerText = "Ponawianie...";
         setTimeout(initWebSocket, 3500);
       };
 

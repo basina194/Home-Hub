@@ -27,6 +27,7 @@ HA_URL = os.environ.get("HA_URL", "").rstrip("/")
 HA_TOKEN = os.environ.get("HA_TOKEN", "")
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "9062746866:AAE4nnHqbNokIEdFnLVZs3SI8bzYsv01ZuQ")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
+WIFE_TELEGRAM_ID = "9216839954"
 LATITUDE = os.environ.get("LATITUDE", "52.53")
 LONGITUDE = os.environ.get("LONGITUDE", "17.60")
 
@@ -85,14 +86,21 @@ ws_manager = ConnectionManager()
 
 
 async def send_telegram_alert(message: str) -> None:
-    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+    if not TELEGRAM_BOT_TOKEN:
         return
+    targets = set()
+    if TELEGRAM_CHAT_ID:
+        targets.add(TELEGRAM_CHAT_ID)
+    if WIFE_TELEGRAM_ID:
+        targets.add(WIFE_TELEGRAM_ID)
+
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            await client.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "HTML"})
-    except Exception as exc:
-        logger.error("Błąd wysyłki Telegram: %s", exc)
+    async with httpx.AsyncClient(timeout=6.0) as client:
+        for tid in targets:
+            try:
+                await client.post(url, json={"chat_id": tid, "text": message, "parse_mode": "HTML"})
+            except Exception as exc:
+                logger.error("Błąd wysyłki Telegram do %s: %s", tid, exc)
 
 
 class ShoppingItemCreate(BaseModel):
@@ -196,6 +204,15 @@ async def clear_bought():
     return {"status": "ok"}
 
 
+@app.delete("/api/home/shopping/{item_id}", dependencies=[Depends(verify_pin)])
+async def delete_shopping_item(item_id: int):
+    url = f"{SUPABASE_URL}/rest/v1/home_shopping?id=eq.{item_id}"
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        await client.delete(url, headers=supabase_headers())
+    await ws_manager.broadcast_refresh("shopping")
+    return {"status": "ok"}
+
+
 # --- MODUŁ FIRMA (SUPABASE) ---
 @app.get("/api/biz/tasks", dependencies=[Depends(verify_pin)])
 async def list_biz_tasks():
@@ -266,13 +283,22 @@ async def reply_telegram(chat_id: int | str, text: str) -> None:
 async def telegram_webhook(update: dict):
     message = update.get("message", {})
     text = message.get("text", "").strip()
-    sender = message.get("from", {}).get("first_name", "Telegram")
     chat_id = message.get("chat", {}).get("id")
 
     if not text or not chat_id:
         return {"ok": True}
 
-    logger.info("Odebrano Telegram od %s (chat %s): %s", sender, chat_id, text)
+    raw_sender = message.get("from", {})
+    user_id_str = str(raw_sender.get("id", ""))
+    chat_id_str = str(chat_id)
+
+    # Rozpoznanie żony po ID
+    if user_id_str == WIFE_TELEGRAM_ID or chat_id_str == WIFE_TELEGRAM_ID:
+        sender = "Żona"
+    else:
+        sender = raw_sender.get("first_name", "Telegram")
+
+    logger.info("Odebrano Telegram od %s (user %s, chat %s): %s", sender, user_id_str, chat_id, text)
 
     # /start lub pomoc
     if text.lower() in ("/start", "/help", "/pomoc"):
