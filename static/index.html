@@ -405,7 +405,14 @@
       try {
         const res = await fetch('/api/home/shopping', { headers: getHeaders() });
         if (res.status === 401) {
-          container.innerHTML = '<div class="text-rose-400 text-sm py-4 text-center">Błędny PIN. Kliknij kłódkę u góry, by zmienić PIN.</div>';
+          container.innerHTML = `
+            <div class="text-rose-400 text-sm py-4 text-center space-y-2">
+              <div>⚠️ Błędny kod PIN (serwer wymaga innego PINu).</div>
+              <button onclick="changePinPrompt()" class="bg-rose-600 hover:bg-rose-500 text-white text-xs px-3 py-1.5 rounded-lg font-semibold shadow">
+                🔑 Wprowadź kod PIN
+              </button>
+            </div>
+          `;
           return;
         }
         if (!res.ok) {
@@ -517,7 +524,14 @@
       try {
         const res = await fetch('/api/biz/tasks', { headers: getHeaders() });
         if (res.status === 401) {
-          container.innerHTML = '<div class="text-rose-400 text-sm py-4 text-center">Błędny PIN.</div>';
+          container.innerHTML = `
+            <div class="text-rose-400 text-sm py-4 text-center space-y-2">
+              <div>⚠️ Błędny kod PIN.</div>
+              <button onclick="changePinPrompt()" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs px-3 py-1.5 rounded-lg font-semibold shadow">
+                🔑 Wprowadź kod PIN
+              </button>
+            </div>
+          `;
           return;
         }
         if (!res.ok) {
