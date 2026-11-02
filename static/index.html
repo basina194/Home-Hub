@@ -7,11 +7,11 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <title>Nexus Hub</title>
-  <meta name="theme-color" content="#0a0c10">
+  <meta name="theme-color" content="#08090d">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Nexus Hub">
-  <link rel="manifest" href="/manifest.json?v=4">
+  <link rel="manifest" href="/manifest.json?v=5">
   <link rel="icon" type="image/svg+xml" href="/static/icon.svg">
   <link rel="apple-touch-icon" href="/static/icon.svg">
 
@@ -35,6 +35,7 @@
               emerald: '#10b981',
               indigo: '#6366f1',
               rose: '#f43f5e',
+              amber: '#f59e0b',
             }
           }
         }
@@ -78,14 +79,14 @@
         </div>
       </div>
 
-      <!-- Segmented Mode Switcher (Things 3 / Apple style) -->
+      <!-- Segmented Mode Switcher (Zakupy vs Kalendarz) -->
       <div class="flex items-center gap-2">
         <div class="bg-[#12141c] p-1 rounded-2xl border border-white/[0.08] flex items-center shadow-inner">
           <button onclick="setTab('home')" id="tab-btn-home" class="px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all bg-indigo-600 text-white shadow-md shadow-indigo-600/30">
-            🏠 Dom
+            🛒 Zakupy
           </button>
-          <button onclick="setTab('biz')" id="tab-btn-biz" class="px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all text-slate-400 hover:text-white">
-            💼 Firma
+          <button onclick="setTab('calendar')" id="tab-btn-calendar" class="px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all text-slate-400 hover:text-white">
+            📅 Kalendarz
           </button>
         </div>
 
@@ -103,7 +104,7 @@
   <!-- MAIN CONTAINER -->
   <main class="flex-1 max-w-2xl w-full mx-auto p-4 space-y-4">
 
-    <!-- ==================== TAB: DOM ==================== -->
+    <!-- ==================== TAB 1: ZAKUPY ==================== -->
     <div id="section-home" class="space-y-4">
 
       <!-- WEATHER PILL / WIDGET -->
@@ -214,97 +215,179 @@
 
     </div>
 
-    <!-- ==================== TAB: FIRMA ==================== -->
-    <div id="section-biz" class="space-y-4 hidden">
+    <!-- ==================== TAB 2: KALENDARZ (RODZINA & ŚMIECI) ==================== -->
+    <div id="section-calendar" class="space-y-4 hidden">
 
-      <!-- STATS -->
-      <div class="grid grid-cols-3 gap-3">
-        <div class="bg-[#11131a] rounded-2xl border border-white/[0.07] p-3.5 text-center">
-          <span class="text-xs text-slate-400 font-medium">Wszystkie</span>
-          <div id="biz-total-count" class="text-xl font-extrabold text-white mt-0.5">0</div>
+      <!-- NEXT WASTE PICKUP ALERT & STATS -->
+      <div id="waste-alert-card" class="bg-gradient-to-r from-amber-500/10 via-[#11131a] to-amber-500/5 rounded-2xl border border-amber-500/20 p-4 shadow-xl flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-xl">
+            🗑️
+          </div>
+          <div>
+            <div class="text-[11px] font-bold uppercase tracking-wider text-amber-400">Harmonogram Odpadów</div>
+            <div id="waste-next-title" class="text-sm font-extrabold text-white">Sprawdzanie odbioru...</div>
+            <div id="waste-next-date" class="text-xs text-slate-400 mt-0.5">--</div>
+          </div>
         </div>
-        <div class="bg-[#11131a] rounded-2xl border border-white/[0.07] p-3.5 text-center">
-          <span class="text-xs text-amber-400 font-medium">W toku</span>
-          <div id="biz-todo-count" class="text-xl font-extrabold text-amber-400 mt-0.5">0</div>
-        </div>
-        <div class="bg-[#11131a] rounded-2xl border border-white/[0.07] p-3.5 text-center">
-          <span class="text-xs text-rose-400 font-medium">Pilne</span>
-          <div id="biz-urgent-count" class="text-xl font-extrabold text-rose-400 mt-0.5">0</div>
+        <div class="text-right">
+          <span id="calendar-total-badge" class="text-xs font-bold px-2.5 py-1 rounded-xl bg-white/[0.05] text-slate-300 border border-white/[0.08]">
+            0 terminów
+          </span>
         </div>
       </div>
 
-      <!-- ADD TASK -->
-      <div class="bg-[#11131a] rounded-3xl border border-white/[0.07] p-5 space-y-3.5 shadow-2xl">
-        <h2 class="text-base font-bold text-white flex items-center gap-2">
-          <span>📋</span>
-          <span>Nowa Sprawa / Polisa</span>
-        </h2>
+      <!-- ADD EVENT CARD -->
+      <div class="bg-[#11131a] rounded-3xl border border-white/[0.07] p-5 space-y-4 shadow-2xl">
+        <div class="flex items-center justify-between">
+          <h2 class="text-base font-bold text-white flex items-center gap-2">
+            <span>📅</span>
+            <span>Nowe Wydarzenie lub Termin</span>
+          </h2>
+          <span class="text-xs text-slate-400 font-mono" id="form-today-hint"></span>
+        </div>
 
-        <form onsubmit="handleBizSubmit(event)" class="space-y-3">
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+        <!-- Quick Waste Chips -->
+        <div class="space-y-1.5">
+          <div class="text-[11px] font-semibold text-slate-400 flex items-center gap-1.5">
+            <span>⚡ Szybki wywóz śmieci:</span>
+          </div>
+          <div class="flex items-center gap-1.5 overflow-x-auto custom-scrollbar py-0.5 text-xs select-none">
+            <button type="button" onclick="quickAddWaste('Plastik i metale (żółty)')" class="px-2.5 py-1 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 font-medium transition-all active:scale-95 flex-shrink-0">
+              + 🟡 Plastik
+            </button>
+            <button type="button" onclick="quickAddWaste('Bio (brązowy)')" class="px-2.5 py-1 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 font-medium transition-all active:scale-95 flex-shrink-0">
+              + 🟤 Bio
+            </button>
+            <button type="button" onclick="quickAddWaste('Papier (niebieski)')" class="px-2.5 py-1 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 font-medium transition-all active:scale-95 flex-shrink-0">
+              + 🔵 Papier
+            </button>
+            <button type="button" onclick="quickAddWaste('Zmieszane (czarny)')" class="px-2.5 py-1 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 font-medium transition-all active:scale-95 flex-shrink-0">
+              + ⚫ Zmieszane
+            </button>
+            <button type="button" onclick="quickAddWaste('Szkło (zielony)')" class="px-2.5 py-1 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 font-medium transition-all active:scale-95 flex-shrink-0">
+              + 🟢 Szkło
+            </button>
+          </div>
+        </div>
+
+        <!-- Add Form -->
+        <form onsubmit="handleCalendarSubmit(event)" class="space-y-3 pt-1">
+          <div>
+            <label class="block text-xs font-semibold text-slate-400 mb-1">Co się dzieje?</label>
+            <input 
+              type="text" 
+              id="cal-title" 
+              placeholder="np. Dentysta, Wyjazd, Urodziny Mamy, Wywóz bio..." 
+              required 
+              class="w-full bg-[#0b0c10] border border-white/[0.08] rounded-xl px-3 py-2 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+            >
+          </div>
+
+          <div class="grid grid-cols-2 gap-2.5">
             <div>
-              <label class="block text-xs font-semibold text-slate-400 mb-1">Klient / Firma</label>
+              <label class="block text-xs font-semibold text-slate-400 mb-1">Data</label>
               <input 
-                type="text" 
-                id="biz-client" 
-                placeholder="np. Jan Kowalski" 
+                type="date" 
+                id="cal-date" 
                 required 
-                class="w-full bg-[#0b0c10] border border-white/[0.08] rounded-xl px-3 py-2 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+                class="w-full bg-[#0b0c10] border border-white/[0.08] rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500"
               >
             </div>
             <div>
-              <label class="block text-xs font-semibold text-slate-400 mb-1">Typ sprawy</label>
-              <select 
-                id="biz-type" 
-                class="w-full bg-[#0b0c10] border border-white/[0.08] rounded-xl px-3 py-2 text-sm text-slate-300 focus:outline-none focus:border-indigo-500"
+              <label class="block text-xs font-semibold text-slate-400 mb-1">Godzina <span class="text-slate-500">(opcjonalna)</span></label>
+              <input 
+                type="time" 
+                id="cal-time" 
+                class="w-full bg-[#0b0c10] border border-white/[0.08] rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500"
               >
-                <option value="Wznowienie polisy">📄 Wznowienie polisy</option>
-                <option value="Nowa oferta">💼 Nowa oferta</option>
-                <option value="Kontakt telefoniczny">📞 Kontakt telefoniczny</option>
-                <option value="Likwidacja szkody">🛡️ Likwidacja szkody</option>
-                <option value="Spotkanie">🤝 Spotkanie</option>
-                <option value="Inne">📌 Inne</option>
-              </select>
             </div>
           </div>
 
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-            <div>
-              <label class="block text-xs font-semibold text-slate-400 mb-1">Termin realizacji</label>
-              <input 
-                type="date" 
-                id="biz-date" 
-                required 
-                class="w-full bg-[#0b0c10] border border-white/[0.08] rounded-xl px-3 py-2 text-sm text-slate-300 focus:outline-none focus:border-indigo-500"
+          <!-- Category Segmented Buttons -->
+          <div>
+            <label class="block text-xs font-semibold text-slate-400 mb-1.5">Kategoria wydarzenia</label>
+            <input type="hidden" id="cal-category" value="Wspólne">
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <button 
+                type="button" 
+                onclick="selectCalendarCategory('Wspólne')" 
+                id="cat-btn-Wspólne"
+                class="cat-picker-btn py-2 px-2.5 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-1.5 bg-emerald-500/20 text-emerald-300 border-emerald-500/40 shadow-sm"
               >
-            </div>
-            <div>
-              <label class="block text-xs font-semibold text-slate-400 mb-1">Priorytet</label>
-              <select 
-                id="biz-priority" 
-                class="w-full bg-[#0b0c10] border border-white/[0.08] rounded-xl px-3 py-2 text-sm text-slate-300 focus:outline-none focus:border-indigo-500"
+                <span>🏡</span> Wspólne
+              </button>
+              <button 
+                type="button" 
+                onclick="selectCalendarCategory('Daria')" 
+                id="cat-btn-Daria"
+                class="cat-picker-btn py-2 px-2.5 rounded-xl border text-xs font-semibold transition-all flex items-center justify-center gap-1.5 bg-[#0b0c10] text-slate-400 border-white/[0.08] hover:text-white"
               >
-                <option value="Normalny">Normalny</option>
-                <option value="Wysoki">Wysoki</option>
-                <option value="Krytyczny">🚨 Krytyczny (Alert Telegram)</option>
-              </select>
+                <span>🌸</span> Daria
+              </button>
+              <button 
+                type="button" 
+                onclick="selectCalendarCategory('Bartosz')" 
+                id="cat-btn-Bartosz"
+                class="cat-picker-btn py-2 px-2.5 rounded-xl border text-xs font-semibold transition-all flex items-center justify-center gap-1.5 bg-[#0b0c10] text-slate-400 border-white/[0.08] hover:text-white"
+              >
+                <span>🧔</span> Bartosz
+              </button>
+              <button 
+                type="button" 
+                onclick="selectCalendarCategory('Śmieci')" 
+                id="cat-btn-Śmieci"
+                class="cat-picker-btn py-2 px-2.5 rounded-xl border text-xs font-semibold transition-all flex items-center justify-center gap-1.5 bg-[#0b0c10] text-slate-400 border-white/[0.08] hover:text-white"
+              >
+                <span>🗑️</span> Śmieci
+              </button>
             </div>
           </div>
 
           <button 
             type="submit" 
-            class="w-full bg-indigo-600 hover:bg-indigo-500 active:scale-98 text-white font-bold py-2.5 rounded-xl text-sm transition-all shadow-md shadow-indigo-600/30"
+            class="w-full bg-indigo-600 hover:bg-indigo-500 active:scale-98 text-white font-bold py-2.5 rounded-xl text-sm transition-all shadow-md shadow-indigo-600/30 flex items-center justify-center gap-1.5 mt-2"
           >
-            Zapisz sprawę
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/>
+            </svg>
+            <span>Zapisz w kalendarzu</span>
           </button>
         </form>
+
+        <!-- Telegram Info Pill for Calendar -->
+        <div class="flex items-center justify-between p-2.5 rounded-xl bg-sky-500/[0.06] border border-sky-500/15 text-xs text-sky-300">
+          <div class="flex items-center gap-2 min-w-0">
+            <span class="text-sm">✈️</span>
+            <span class="truncate">Telegram: np. <code class="font-bold text-white bg-sky-950/80 px-1 py-0.5 rounded">/kalendarz jutro bio</code> lub <code class="font-bold text-white bg-sky-950/80 px-1 py-0.5 rounded">/termin 15.11 dentysta 16:30 Daria</code></span>
+          </div>
+        </div>
+
       </div>
 
-      <!-- BIZ TASKS LIST -->
-      <div class="bg-[#11131a] rounded-3xl border border-white/[0.07] p-5 space-y-3 shadow-2xl">
-        <h3 class="text-sm font-bold text-slate-300">Rejestr Spraw</h3>
-        <div id="biz-tasks-list" class="space-y-2 max-h-[30rem] overflow-y-auto custom-scrollbar pr-1">
-          <div class="text-center py-8 text-sm text-slate-500">Pobieranie spraw...</div>
+      <!-- FILTER TABS -->
+      <div class="flex items-center gap-1.5 overflow-x-auto custom-scrollbar py-1 text-xs select-none">
+        <button onclick="setCalendarFilter('all')" id="filter-btn-all" class="px-3 py-1.5 rounded-xl font-bold transition-all bg-indigo-600 text-white shadow-sm flex-shrink-0">
+          Wszystkie
+        </button>
+        <button onclick="setCalendarFilter('Wspólne')" id="filter-btn-Wspólne" class="px-3 py-1.5 rounded-xl font-semibold transition-all bg-[#11131a] text-slate-400 hover:text-white border border-white/[0.06] flex-shrink-0">
+          🏡 Wspólne
+        </button>
+        <button onclick="setCalendarFilter('Daria')" id="filter-btn-Daria" class="px-3 py-1.5 rounded-xl font-semibold transition-all bg-[#11131a] text-slate-400 hover:text-white border border-white/[0.06] flex-shrink-0">
+          🌸 Daria
+        </button>
+        <button onclick="setCalendarFilter('Bartosz')" id="filter-btn-Bartosz" class="px-3 py-1.5 rounded-xl font-semibold transition-all bg-[#11131a] text-slate-400 hover:text-white border border-white/[0.06] flex-shrink-0">
+          🧔 Bartosz
+        </button>
+        <button onclick="setCalendarFilter('Śmieci')" id="filter-btn-Śmieci" class="px-3 py-1.5 rounded-xl font-semibold transition-all bg-[#11131a] text-slate-400 hover:text-white border border-white/[0.06] flex-shrink-0">
+          🗑️ Śmieci
+        </button>
+      </div>
+
+      <!-- EVENTS AGENDA LIST -->
+      <div class="space-y-4" id="calendar-events-container">
+        <div id="calendar-events-list" class="space-y-3">
+          <div class="text-center py-8 text-sm text-slate-500 animate-pulse">Ładowanie kalendarza...</div>
         </div>
       </div>
 
@@ -325,7 +408,7 @@
       <!-- Version & Cache Reset -->
       <div class="flex items-center gap-2">
         <button onclick="forceAppRefresh()" class="text-[11px] text-slate-500 hover:text-slate-300 transition-colors">
-          Wersja 4.0 • Odśwież pamięć
+          Wersja 5.0 • Odśwież pamięć
         </button>
       </div>
 
@@ -341,9 +424,11 @@
     
     // In-memory data store for 0ms OPTIMISTIC UI
     let shoppingItems = [];
-    let bizTasks = [];
+    let calendarEvents = [];
+    let currentCalendarFilter = 'all';
+    let selectedCalendarCategory = 'Wspólne';
 
-    // Client-side NLP Polish Item Parser (parses "2 mleka", "jajka 10", "chleb 2 szt", "2x chleb")
+    // Polish Item Parser for natural language quantities
     function parsePolishItem(raw) {
       raw = (raw || '').trim();
       if (!raw) return { item: '', quantity: '1' };
@@ -422,20 +507,21 @@
     function setTab(tab) {
       activeTab = tab;
       const homeSec = document.getElementById('section-home');
-      const bizSec = document.getElementById('section-biz');
+      const calSec = document.getElementById('section-calendar');
       const dHomeBtn = document.getElementById('tab-btn-home');
-      const dBizBtn = document.getElementById('tab-btn-biz');
+      const dCalBtn = document.getElementById('tab-btn-calendar');
 
       if (tab === 'home') {
         homeSec.classList.remove('hidden');
-        bizSec.classList.add('hidden');
+        calSec.classList.add('hidden');
         dHomeBtn.className = "px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all bg-indigo-600 text-white shadow-md shadow-indigo-600/30";
-        dBizBtn.className = "px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all text-slate-400 hover:text-white";
+        dCalBtn.className = "px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all text-slate-400 hover:text-white";
       } else {
         homeSec.classList.add('hidden');
-        bizSec.classList.remove('hidden');
-        dBizBtn.className = "px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all bg-indigo-600 text-white shadow-md shadow-indigo-600/30";
+        calSec.classList.remove('hidden');
+        dCalBtn.className = "px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all bg-indigo-600 text-white shadow-md shadow-indigo-600/30";
         dHomeBtn.className = "px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all text-slate-400 hover:text-white";
+        fetchCalendar(false);
       }
     }
 
@@ -541,7 +627,7 @@
     }
 
     function renderItemRow(item, isBought) {
-      const isWife = item.added_by && item.added_by.toLowerCase().includes('żona');
+      const isWife = item.added_by && (item.added_by.toLowerCase().includes('żona') || item.added_by.toLowerCase().includes('daria'));
 
       return `
         <div class="group flex items-center justify-between p-3 rounded-2xl border transition-all duration-150 ${
@@ -586,7 +672,7 @@
           <div class="flex items-center gap-2 flex-shrink-0 ml-2">
             ${isWife ? `
               <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-300 border border-rose-500/30 flex items-center gap-1 shadow-sm">
-                🌸 Żona
+                🌸 Daria
               </span>
             ` : (item.added_by && item.added_by !== 'Panel' ? `
               <span class="text-[10px] font-semibold text-slate-400 bg-white/[0.04] border border-white/[0.08] px-2 py-0.5 rounded-md">
@@ -635,7 +721,6 @@
       const text = input.value.trim();
       if (!text) return;
 
-      // Inteligentne parsowanie: "2 mleka", "jajka 10", "chleb"
       const parsed = parsePolishItem(text);
       addItemOptimistic(parsed.item, parsed.quantity);
       input.value = '';
@@ -709,119 +794,326 @@
       });
     }
 
-    // --- MODUŁ FIRMA (OPTIMISTIC UI) ---
-    async function fetchBizTasks() {
-      const container = document.getElementById('biz-tasks-list');
+    // ==================== KALENDARZ (0ms OPTIMISTIC UI) ====================
+    async function fetchCalendar(showLoading = false) {
+      const container = document.getElementById('calendar-events-list');
+      if (showLoading && calendarEvents.length === 0 && container) {
+        container.innerHTML = '<div class="text-slate-500 text-sm py-8 text-center animate-pulse">Ładowanie wydarzeń...</div>';
+      }
+
       try {
-        const res = await fetch('/api/biz/tasks', { headers: getHeaders() });
-        if (res.status === 401) return;
+        const res = await fetch('/api/home/calendar', { headers: getHeaders() });
+        if (res.status === 401) {
+          if (container) {
+            container.innerHTML = `
+              <div class="text-rose-400 text-sm py-6 text-center space-y-2">
+                <div>⚠️ Wymagany PIN (9045).</div>
+                <button onclick="changePinPrompt()" class="bg-rose-600 hover:bg-rose-500 text-white text-xs px-3.5 py-1.5 rounded-xl font-bold shadow">
+                  🔑 Wprowadź PIN
+                </button>
+              </div>
+            `;
+          }
+          return;
+        }
         if (!res.ok) return;
-        const tasks = await res.json();
-        if (Array.isArray(tasks)) {
-          bizTasks = tasks;
-          renderBizTasks();
+
+        const events = await res.json();
+        if (Array.isArray(events)) {
+          calendarEvents = events;
+          renderCalendar();
         }
       } catch (e) {
-        console.error(e);
+        console.error('Błąd pobierania kalendarza:', e);
       }
     }
 
-    function renderBizTasks() {
-      const container = document.getElementById('biz-tasks-list');
-      const total = bizTasks.length;
-      const todo = bizTasks.filter(t => t.status !== 'Done').length;
-      const urgent = bizTasks.filter(t => t.priority === 'Krytyczny' && t.status !== 'Done').length;
+    function selectCalendarCategory(cat) {
+      selectedCalendarCategory = cat;
+      document.getElementById('cal-category').value = cat;
 
-      document.getElementById('biz-total-count').innerText = total;
-      document.getElementById('biz-todo-count').innerText = todo;
-      document.getElementById('biz-urgent-count').innerText = urgent;
+      const cats = ['Wspólne', 'Daria', 'Bartosz', 'Śmieci'];
+      cats.forEach(c => {
+        const btn = document.getElementById(`cat-btn-${c}`);
+        if (!btn) return;
+        if (c === cat) {
+          if (c === 'Śmieci') {
+            btn.className = "cat-picker-btn py-2 px-2.5 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-1.5 bg-amber-500/20 text-amber-300 border-amber-500/40 shadow-sm";
+          } else if (c === 'Daria') {
+            btn.className = "cat-picker-btn py-2 px-2.5 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-1.5 bg-rose-500/20 text-rose-300 border-rose-500/40 shadow-sm";
+          } else if (c === 'Bartosz') {
+            btn.className = "cat-picker-btn py-2 px-2.5 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-1.5 bg-indigo-500/20 text-indigo-300 border-indigo-500/40 shadow-sm";
+          } else {
+            btn.className = "cat-picker-btn py-2 px-2.5 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-1.5 bg-emerald-500/20 text-emerald-300 border-emerald-500/40 shadow-sm";
+          }
+        } else {
+          btn.className = "cat-picker-btn py-2 px-2.5 rounded-xl border text-xs font-semibold transition-all flex items-center justify-center gap-1.5 bg-[#0b0c10] text-slate-400 border-white/[0.08] hover:text-white";
+        }
+      });
+    }
 
-      if (total === 0) {
-        container.innerHTML = '<div class="text-slate-500 text-sm py-8 text-center">Brak spraw w rejestrze. Dobra robota! ☕</div>';
+    function quickAddWaste(wasteName) {
+      document.getElementById('cal-title').value = `Wywóz: ${wasteName}`;
+      selectCalendarCategory('Śmieci');
+
+      // Domyślnie jutro, jeśli data nie wybrana
+      const dateInput = document.getElementById('cal-date');
+      if (!dateInput.value) {
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        dateInput.value = tomorrow.toISOString().split('T')[0];
+      }
+      dateInput.focus();
+    }
+
+    function setCalendarFilter(filter) {
+      currentCalendarFilter = filter;
+      const filters = ['all', 'Wspólne', 'Daria', 'Bartosz', 'Śmieci'];
+      filters.forEach(f => {
+        const btn = document.getElementById(`filter-btn-${f}`);
+        if (!btn) return;
+        if (f === filter) {
+          btn.className = "px-3 py-1.5 rounded-xl font-bold transition-all bg-indigo-600 text-white shadow-sm flex-shrink-0";
+        } else {
+          btn.className = "px-3 py-1.5 rounded-xl font-semibold transition-all bg-[#11131a] text-slate-400 hover:text-white border border-white/[0.06] flex-shrink-0";
+        }
+      });
+      renderCalendar();
+    }
+
+    function formatPolishDateHeading(dateStr) {
+      if (!dateStr) return '';
+      const today = new Date();
+      const todayIso = today.toISOString().split('T')[0];
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const tomorrowIso = tomorrow.toISOString().split('T')[0];
+
+      const parts = dateStr.split('-');
+      if (parts.length !== 3) return dateStr;
+      const targetDate = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+      const options = { weekday: 'long', day: 'numeric', month: 'long' };
+      const formatted = targetDate.toLocaleDateString('pl-PL', options);
+
+      if (dateStr === todayIso) {
+        return `Dzisiaj • ${formatted}`;
+      } else if (dateStr === tomorrowIso) {
+        return `Jutro • ${formatted}`;
+      } else {
+        return formatted.charAt(0).toUpperCase() + formatted.slice(1);
+      }
+    }
+
+    function getCategoryBadge(cat) {
+      switch (cat) {
+        case 'Śmieci':
+          return `<span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 flex items-center gap-1 shadow-sm">🗑️ Śmieci</span>`;
+        case 'Daria':
+          return `<span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-300 border border-rose-500/30 flex items-center gap-1 shadow-sm">🌸 Daria</span>`;
+        case 'Bartosz':
+          return `<span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 flex items-center gap-1 shadow-sm">🧔 Bartosz</span>`;
+        default:
+          return `<span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 flex items-center gap-1 shadow-sm">🏡 Wspólne</span>`;
+      }
+    }
+
+    function renderCalendar() {
+      const container = document.getElementById('calendar-events-list');
+      const badge = document.getElementById('calendar-total-badge');
+      const wasteTitle = document.getElementById('waste-next-title');
+      const wasteDate = document.getElementById('waste-next-date');
+
+      const todayIso = new Date().toISOString().split('T')[0];
+
+      // Update badge
+      badge.innerText = `${calendarEvents.length} terminów`;
+
+      // Find nearest waste pickup
+      const upcomingWaste = calendarEvents
+        .filter(ev => ev.category === 'Śmieci' && ev.event_date >= todayIso)
+        .sort((a, b) => a.event_date.localeCompare(b.event_date));
+
+      if (upcomingWaste.length > 0) {
+        const nextW = upcomingWaste[0];
+        wasteTitle.innerText = nextW.title;
+        wasteDate.innerText = formatPolishDateHeading(nextW.event_date);
+      } else {
+        wasteTitle.innerText = 'Wszystkie odpady odebrane';
+        wasteDate.innerText = 'Brak zaplanowanych wywozów w najbliższych dniach';
+      }
+
+      // Filter events
+      let filtered = calendarEvents;
+      if (currentCalendarFilter !== 'all') {
+        filtered = calendarEvents.filter(ev => ev.category === currentCalendarFilter);
+      }
+
+      if (filtered.length === 0) {
+        container.innerHTML = `
+          <div class="text-center py-10 px-4 rounded-3xl bg-white/[0.02] border border-white/[0.04]">
+            <div class="text-3xl mb-1.5">📅</div>
+            <div class="font-bold text-sm text-slate-200">Brak zaplanowanych wydarzeń</div>
+            <div class="text-xs text-slate-500 mt-0.5">Dodaj termin powyżej lub wyślij na Telegramie.</div>
+          </div>
+        `;
         return;
       }
 
-      container.innerHTML = bizTasks.map(task => {
-        const isDone = task.status === 'Done';
-        const isUrgent = task.priority === 'Krytyczny';
+      // Group by date
+      const groups = {};
+      filtered.forEach(ev => {
+        const d = ev.event_date || todayIso;
+        if (!groups[d]) groups[d] = [];
+        groups[d].push(ev);
+      });
+
+      // Sort dates
+      const sortedDates = Object.keys(groups).sort();
+
+      container.innerHTML = sortedDates.map(dateKey => {
+        const dayEvents = groups[dateKey];
+        const heading = formatPolishDateHeading(dateKey);
+        const isToday = dateKey === todayIso;
+
         return `
-          <div class="p-3.5 rounded-2xl border transition-all ${
-            isDone 
-              ? 'bg-white/[0.015] border-white/[0.03] opacity-45' 
-              : (isUrgent 
-                  ? 'bg-rose-500/[0.08] border-rose-500/30' 
-                  : 'bg-[#0d0f17] border-white/[0.06]')
-          } flex items-center justify-between gap-3">
-            <div class="flex items-start gap-3 flex-1 min-w-0 cursor-pointer" onclick="toggleBizTask(${task.id})">
-              <div class="mt-0.5 w-5 h-5 rounded-lg flex items-center justify-center border transition-all ${
-                isDone 
-                  ? 'bg-indigo-600 border-indigo-600 text-white' 
-                  : 'border-slate-700 bg-slate-900'
-              }">
-                ${isDone ? '✓' : ''}
-              </div>
-              <div class="min-w-0 flex-1">
-                <div class="text-sm font-bold text-slate-100 truncate ${isDone ? 'line-through text-slate-500' : ''}">
-                  ${escapeHtml(task.client_name)}
-                </div>
-                <div class="text-xs text-slate-400 flex items-center gap-2 mt-0.5">
-                  <span>${escapeHtml(task.task_type)}</span>
-                  <span>•</span>
-                  <span class="font-mono text-slate-400">${escapeHtml(task.due_date)}</span>
-                </div>
-              </div>
-            </div>
-            <div>
-              <span class="text-[10px] font-bold px-2.5 py-1 rounded-full ${
-                isUrgent ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 animate-pulse' : 
-                (task.priority === 'Wysoki' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' : 'bg-white/[0.04] text-slate-400 border border-white/[0.08]')
-              }">
-                ${escapeHtml(task.priority)}
+          <div class="space-y-2">
+            <div class="flex items-center gap-2 px-1 pt-2">
+              <span class="text-xs font-extrabold uppercase tracking-wider ${isToday ? 'text-indigo-400 font-mono' : 'text-slate-400 font-semibold'}">
+                ${heading}
               </span>
+              <span class="flex-1 h-px bg-white/[0.06]"></span>
+            </div>
+
+            <div class="space-y-2">
+              ${dayEvents.map(ev => renderCalendarItemRow(ev)).join('')}
             </div>
           </div>
         `;
       }).join('');
     }
 
-    function toggleBizTask(id) {
-      const task = bizTasks.find(t => t.id === id);
-      if (!task) return;
-      if ('vibrate' in navigator) navigator.vibrate(10);
+    function renderCalendarItemRow(ev) {
+      const isWaste = ev.category === 'Śmieci';
+      const isDaria = ev.category === 'Daria';
+      const isBartosz = ev.category === 'Bartosz';
 
-      task.status = task.status === 'Done' ? 'Todo' : 'Done';
-      renderBizTasks();
+      return `
+        <div class="group flex items-center justify-between p-3.5 rounded-2xl border transition-all duration-150 ${
+          isWaste 
+            ? 'bg-amber-500/[0.05] border-amber-500/20 hover:border-amber-500/35 shadow-sm'
+            : (isDaria 
+                ? 'bg-rose-500/[0.05] border-rose-500/20 hover:border-rose-500/35 shadow-sm'
+                : (isBartosz 
+                    ? 'bg-indigo-500/[0.05] border-indigo-500/20 hover:border-indigo-500/35 shadow-sm'
+                    : 'bg-[#0d0f17] hover:bg-[#121521] border-white/[0.06] shadow-sm'))
+        }">
+          
+          <div class="flex items-start gap-3 min-w-0 flex-1">
+            <div class="mt-0.5 text-base flex-shrink-0">
+              ${isWaste ? '🗑️' : (isDaria ? '🌸' : (isBartosz ? '🧔' : '🏡'))}
+            </div>
 
-      fetch(`/api/biz/tasks/${id}/done`, {
-        method: 'PATCH',
-        headers: getHeaders()
-      }).catch(() => {
-        task.status = task.status === 'Done' ? 'Todo' : 'Done';
-        renderBizTasks();
-      });
+            <div class="min-w-0 flex-1">
+              <div class="text-sm font-bold text-slate-100 group-hover:text-white truncate">
+                ${escapeHtml(ev.title)}
+              </div>
+              <div class="text-xs text-slate-400 flex items-center gap-2 mt-0.5">
+                ${ev.event_time ? `
+                  <span class="font-mono text-indigo-300 font-bold bg-indigo-500/10 px-1.5 py-0.2 rounded border border-indigo-500/20">
+                    🕒 ${escapeHtml(ev.event_time)}
+                  </span>
+                ` : `
+                  <span class="text-slate-500">Cały dzień</span>
+                `}
+                <span>•</span>
+                <span class="text-[11px] text-slate-500 truncate">
+                  ${escapeHtml(ev.created_by || 'Aplikacja')}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-2 flex-shrink-0 ml-2">
+            ${getCategoryBadge(ev.category)}
+
+            <button onclick="deleteCalendarEvent(${ev.id})" title="Usuń termin" class="opacity-30 group-hover:opacity-100 p-1.5 rounded-lg hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 transition-all">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+              </svg>
+            </button>
+          </div>
+
+        </div>
+      `;
     }
 
-    function handleBizSubmit(e) {
+    // 0ms ADD CALENDAR EVENT
+    function handleCalendarSubmit(e) {
       e.preventDefault();
-      const client = document.getElementById('biz-client').value.trim();
-      const type = document.getElementById('biz-type').value;
-      const date = document.getElementById('biz-date').value;
-      const priority = document.getElementById('biz-priority').value;
+      const titleInput = document.getElementById('cal-title');
+      const dateInput = document.getElementById('cal-date');
+      const timeInput = document.getElementById('cal-time');
 
-      fetch('/api/biz/tasks', {
+      const title = titleInput.value.trim();
+      const evDate = dateInput.value;
+      const evTime = timeInput.value.trim();
+      const category = selectedCalendarCategory || 'Wspólne';
+
+      if (!title || !evDate) return;
+
+      const tempId = 'temp_cal_' + Date.now();
+      const optimisticEvent = {
+        id: tempId,
+        title: title,
+        event_date: evDate,
+        event_time: evTime,
+        category: category,
+        created_by: 'Panel'
+      };
+
+      calendarEvents.push(optimisticEvent);
+      calendarEvents.sort((a, b) => (a.event_date + (a.event_time || '')).localeCompare(b.event_date + (b.event_time || '')));
+      renderCalendar();
+      if ('vibrate' in navigator) navigator.vibrate(15);
+
+      titleInput.value = '';
+      timeInput.value = '';
+
+      fetch('/api/home/calendar', {
         method: 'POST',
         headers: getHeaders(),
         body: JSON.stringify({
-          client_name: client,
-          task_type: type,
-          due_date: date,
-          priority: priority
+          title: title,
+          event_date: evDate,
+          event_time: evTime,
+          category: category,
+          created_by: 'Panel'
         })
       }).then(() => {
-        document.getElementById('biz-client').value = '';
-        fetchBizTasks();
+        fetchCalendar(false);
       }).catch(err => {
-        alert('Błąd dodawania zadania: ' + err.message);
+        calendarEvents = calendarEvents.filter(ev => ev.id !== tempId);
+        renderCalendar();
+        alert('Błąd zapisu terminu: ' + err.message);
+      });
+    }
+
+    // 0ms DELETE CALENDAR EVENT
+    function deleteCalendarEvent(id) {
+      const ev = calendarEvents.find(e => e.id === id);
+      if (!ev) return;
+
+      const previousState = [...calendarEvents];
+      calendarEvents = calendarEvents.filter(e => e.id !== id);
+      renderCalendar();
+      if ('vibrate' in navigator) navigator.vibrate(8);
+
+      fetch(`/api/home/calendar/${id}`, {
+        method: 'DELETE',
+        headers: getHeaders()
+      }).catch(() => {
+        calendarEvents = previousState;
+        renderCalendar();
       });
     }
 
@@ -845,7 +1137,7 @@
           const msg = JSON.parse(event.data);
           if (msg.action === 'refresh') {
             if (msg.module === 'shopping') fetchShopping(false);
-            if (msg.module === 'biz') fetchBizTasks();
+            if (msg.module === 'calendar') fetchCalendar(false);
           }
         } catch (e) {
           console.error('WS Parse error', e);
@@ -866,7 +1158,7 @@
     function refreshAllData() {
       fetchWeather();
       fetchShopping(true);
-      fetchBizTasks();
+      fetchCalendar(true);
     }
 
     function escapeHtml(str) {
@@ -881,7 +1173,7 @@
 
     // Auto-update Service Worker
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js?v=4').then(reg => {
+      navigator.serviceWorker.register('/sw.js?v=5').then(reg => {
         reg.update();
       }).catch(err => console.log('SW fail:', err));
     }
@@ -895,8 +1187,8 @@
       if (dateEl) dateEl.innerText = dateStr;
 
       const todayIso = now.toISOString().split('T')[0];
-      const taskDateEl = document.getElementById('biz-date');
-      if (taskDateEl) taskDateEl.value = todayIso;
+      const calDateEl = document.getElementById('cal-date');
+      if (calDateEl) calDateEl.value = todayIso;
 
       initWebSocket();
       refreshAllData();

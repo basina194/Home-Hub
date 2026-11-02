@@ -1,6 +1,7 @@
 # main.py
 import os
 import re
+import datetime
 import logging
 from typing import List, Optional
 
@@ -102,6 +103,14 @@ async def send_telegram_alert(message: str) -> None:
                 await client.post(url, json={"chat_id": tid, "text": message, "parse_mode": "HTML"})
             except Exception as exc:
                 logger.error("Błąd wysyłki Telegram do %s: %s", tid, exc)
+
+
+class CalendarEventCreate(BaseModel):
+    title: str
+    event_date: str
+    event_time: Optional[str] = ""
+    category: str = "Wspólne"
+    created_by: str = "Aplikacja"
 
 
 class ShoppingItemCreate(BaseModel):
@@ -229,6 +238,36 @@ async def delete_shopping_item(item_id: int):
     return {"status": "ok"}
 
 
+# --- MODUŁ KALENDARZ (SUPABASE) ---
+@app.get("/api/home/calendar", dependencies=[Depends(verify_pin)])
+async def list_calendar_events():
+    url = f"{SUPABASE_URL}/rest/v1/home_calendar?select=*&order=event_date.asc,event_time.asc&limit=100"
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        resp = await client.get(url, headers=supabase_headers())
+        resp.raise_for_status()
+        return resp.json()
+
+
+@app.post("/api/home/calendar", dependencies=[Depends(verify_pin)])
+async def add_calendar_event(payload: CalendarEventCreate):
+    url = f"{SUPABASE_URL}/rest/v1/home_calendar"
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.post(url, headers=supabase_headers(), json=payload.model_dump())
+        resp.raise_for_status()
+    await ws_manager.broadcast_refresh("calendar")
+    return {"status": "ok"}
+
+
+@app.delete("/api/home/calendar/{event_id}", dependencies=[Depends(verify_pin)])
+async def delete_calendar_event(event_id: int):
+    url = f"{SUPABASE_URL}/rest/v1/home_calendar?id=eq.{event_id}"
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.delete(url, headers=supabase_headers())
+        resp.raise_for_status()
+    await ws_manager.broadcast_refresh("calendar")
+    return {"status": "ok"}
+
+
 # --- MODUŁ FIRMA (SUPABASE) ---
 @app.get("/api/biz/tasks", dependencies=[Depends(verify_pin)])
 async def list_biz_tasks():
@@ -336,6 +375,69 @@ def parse_polish_item(raw: str) -> tuple[str, str]:
     return raw, "1"
 
 
+def parse_calendar_input(text: str, default_user: str = "Bartosz") -> tuple[str, str, str, str]:
+    """Inteligentne rozpoznawanie daty, godziny, tytułu i kategorii:
+    - 'kalendarz 15.11 dentysta 16:30' -> ('Dentysta', '2026-11-15', '16:30', 'Bartosz')
+    - 'śmieci jutro bio' -> ('Bio', '2026-11-03', '', 'Śmieci')
+    - 'termin 20.11 wyjazd z rodzicami Daria' -> ('Wyjazd z rodzicami', '2026-11-20', '', 'Daria')
+    """
+    now = datetime.date.today()
+    cleaned = text.strip()
+    for prefix in [
+        "/kalendarz ", "kalendarz ", "/termin ", "termin ", "/smieci ", "smieci ",
+        "/śmieci ", "śmieci ", "/wydarzenie ", "wydarzenie ", "/event ", "event "
+    ]:
+        if cleaned.lower().startswith(prefix):
+            cleaned = cleaned[len(prefix):].strip()
+            break
+
+    lower = cleaned.lower()
+    cat = "Wspólne"
+    if any(k in lower for k in ['śmieci', 'smieci', 'bio', 'plastik', 'papier', 'zmieszane', 'odpady']):
+        cat = "Śmieci"
+    elif 'daria' in lower:
+        cat = "Daria"
+    elif any(k in lower for k in ['bartosz', 'bartek']):
+        cat = "Bartosz"
+    elif any(k in lower for k in ['wspólne', 'wspolne', 'razem', 'dom']):
+        cat = "Wspólne"
+    else:
+        cat = "Daria" if default_user.lower() == "daria" else "Bartosz"
+
+    event_date = str(now)
+    time_str = ""
+
+    # Szukaj godziny HH:MM
+    m_time = re.search(r'\b([01]?\d|2[0-3]):([0-5]\d)\b', cleaned)
+    if m_time:
+        time_str = m_time.group(0)
+        cleaned = cleaned.replace(time_str, "").strip()
+
+    # Szukaj daty słownej lub numerycznej
+    if "pojutrze" in lower:
+        event_date = str(now + datetime.timedelta(days=2))
+        cleaned = re.sub(r'\bpojutrze\b', '', cleaned, flags=re.I).strip()
+    elif "jutro" in lower:
+        event_date = str(now + datetime.timedelta(days=1))
+        cleaned = re.sub(r'\bjutro\b', '', cleaned, flags=re.I).strip()
+    elif "dzisiaj" in lower or "dziś" in lower:
+        event_date = str(now)
+        cleaned = re.sub(r'\b(dzisiaj|dziś)\b', '', cleaned, flags=re.I).strip()
+    else:
+        m_date = re.search(r'\b(\d{1,2})[./-](\d{1,2})(?:[./-](\d{4}))?\b', cleaned)
+        if m_date:
+            day = int(m_date.group(1))
+            month = int(m_date.group(2))
+            year = int(m_date.group(3)) if m_date.group(3) else now.year
+            event_date = f"{year:04d}-{month:02d}-{day:02d}"
+            cleaned = cleaned.replace(m_date.group(0), "").strip()
+
+    # Usunięcie zbędnych słów kluczowych z tytułu
+    cleaned = re.sub(r'\b(daria|bartosz|bartek|wspólne|wspolne)\b', '', cleaned, flags=re.I).strip()
+    cleaned = re.sub(r'^(o|w|na|ze|z|dla)\s+', '', cleaned, flags=re.I).strip()
+    return cleaned.capitalize() or "Wydarzenie", event_date, time_str, cat
+
+
 async def reply_telegram(chat_id: int | str, text: str) -> None:
     if not TELEGRAM_BOT_TOKEN or not chat_id:
         return
@@ -361,31 +463,36 @@ async def telegram_webhook(update: dict):
     user_id_str = str(raw_sender.get("id", ""))
     chat_id_str = str(chat_id)
 
-    # Rozpoznanie żony po ID
+    # Rozpoznanie: Daria / Bartosz
     if user_id_str == WIFE_TELEGRAM_ID or chat_id_str == WIFE_TELEGRAM_ID:
-        sender = "Żona"
+        sender = "Daria"
     else:
-        sender = raw_sender.get("first_name", "Telegram")
+        sender = "Bartosz"
 
     logger.info("Odebrano Telegram od %s (user %s, chat %s): %s", sender, user_id_str, chat_id, text)
 
     # /start lub pomoc
     if text.lower() in ("/start", "/help", "/pomoc"):
         help_msg = (
-            f"👋 Cześć <b>{sender}</b>! Jestem botem <b>Home Hub</b> 🏠\n\n"
-            "🛒 <b>Dodawanie zakupów:</b>\n"
-            "Napisz np.:\n"
-            "• <code>/kup mleko - 2 opakowania, kawa, chleb</code>\n"
-            "• albo bez ukośnika: <code>kup masło, jajka - 10 szt</code>\n\n"
-            "📋 <b>Podgląd listy:</b>\n"
-            "• Wyślij <code>/lista</code>, aby zobaczyć aktualne zakupy.\n\n"
-            "Aplikacja webowa: https://home-hub-sewt.onrender.com/"
+            f"👋 Cześć <b>{sender}</b>! Witaj w <b>Nexus Home Hub</b> 🏠\n\n"
+            "🛒 <b>Zakupy:</b>\n"
+            "Napisz po prostu co kupić, np.:\n"
+            "• <code>2 mleka, 5 jajek, chleb</code>\n"
+            "• <code>masło, woda 6 butelek</code>\n\n"
+            "📅 <b>Kalendarz & Śmieci:</b>\n"
+            "• <code>/kalendarz jutro wywóz plastiku</code>\n"
+            "• <code>/kalendarz 15.11 dentysta 16:30 Daria</code>\n"
+            "• <code>/smieci 04.11 odpady bio</code>\n\n"
+            "📋 <b>Podgląd:</b>\n"
+            "• <code>/lista</code> - aktualne zakupy\n"
+            "• <code>/kalendarz</code> - nadchodzące wydarzenia\n\n"
+            "Aplikacja: https://home-hub-sewt.onrender.com/"
         )
         await reply_telegram(chat_id, help_msg)
         return {"ok": True}
 
-    # /lista - sprawdzenie aktualnych zakupów
-    if text.lower() in ("/lista", "lista", "/zakupy"):
+    # /lista - sprawdzenie zakupów
+    if text.lower() in ("/lista", "lista", "/zakupy", "zakupy"):
         url = f"{SUPABASE_URL}/rest/v1/home_shopping?is_bought=eq.false&order=id.asc"
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.get(url, headers=supabase_headers())
@@ -399,6 +506,52 @@ async def telegram_webhook(update: dict):
                 qty_str = f" <i>({item.get('quantity')})</i>" if item.get("quantity") and item.get("quantity") != "1" else ""
                 lines.append(f"{idx}. {item.get('item')}{qty_str}")
             await reply_telegram(chat_id, "\n".join(lines))
+        return {"ok": True}
+
+    # /kalendarz (bez parametrów) - podgląd nadchodzących wydarzeń
+    if text.lower() in ("/kalendarz", "kalendarz", "/terminy", "terminy", "/wydarzenia", "wydarzenia"):
+        today_str = str(datetime.date.today())
+        url = f"{SUPABASE_URL}/rest/v1/home_calendar?event_date=gte.{today_str}&order=event_date.asc,event_time.asc&limit=15"
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(url, headers=supabase_headers())
+            events = resp.json() if resp.status_code == 200 else []
+
+        if not events:
+            await reply_telegram(chat_id, "📅 <b>Kalendarz jest pusty!</b> Brak nadchodzących wydarzeń.")
+        else:
+            cat_icons = {"Bartosz": "🧔", "Daria": "👩", "Wspólne": "🏡", "Śmieci": "🗑️"}
+            lines = ["📅 <b>Nadchodzące wydarzenia i terminy:</b>"]
+            for ev in events:
+                icon = cat_icons.get(ev.get("category", "Wspólne"), "📌")
+                time_str = f" ({ev.get('event_time')})" if ev.get("event_time") else ""
+                lines.append(f"• {icon} <b>{ev.get('event_date')}{time_str}</b>: {ev.get('title')} <i>[{ev.get('category')}]</i>")
+            await reply_telegram(chat_id, "\n".join(lines))
+        return {"ok": True}
+
+    # Dodawanie do kalendarza (/kalendarz ..., /termin ..., /smieci ...)
+    is_calendar_add = any(text.lower().startswith(p) for p in [
+        "/kalendarz ", "kalendarz ", "/termin ", "termin ", "/smieci ", "smieci ",
+        "/śmieci ", "śmieci ", "/wydarzenie ", "wydarzenie "
+    ])
+    if is_calendar_add:
+        title, ev_date, ev_time, cat = parse_calendar_input(text, sender)
+        url = f"{SUPABASE_URL}/rest/v1/home_calendar"
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            await client.post(url, headers=supabase_headers(), json={
+                "title": title,
+                "event_date": ev_date,
+                "event_time": ev_time,
+                "category": cat,
+                "created_by": f"TG: {sender}"
+            })
+        await ws_manager.broadcast_refresh("calendar")
+        cat_icons = {"Bartosz": "🧔", "Daria": "👩", "Wspólne": "🏡", "Śmieci": "🗑️"}
+        icon = cat_icons.get(cat, "📌")
+        time_txt = f" o godz. {ev_time}" if ev_time else ""
+        await reply_telegram(
+            chat_id,
+            f"📅 <b>Dodano do kalendarza ({sender}):</b>\n• {icon} <b>{title}</b>\n• Data: <b>{ev_date}{time_txt}</b>\n• Kategoria: <b>{cat}</b>"
+        )
         return {"ok": True}
 
     # Obsługa komend: /kup ..., kup ..., lub po prostu listy zakupów wpisanej wprost (np. "2 mleka, 5 jajek")

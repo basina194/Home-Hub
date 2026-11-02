@@ -1,4 +1,4 @@
-const CACHE_NAME = 'home-hub-v4';
+const CACHE_NAME = 'home-hub-v5';
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
