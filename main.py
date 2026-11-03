@@ -314,7 +314,7 @@ async def lifespan(app: FastAPI):
         await HTTP_CLIENT.aclose()
 
 
-app = FastAPI(title="Nexus Cloud Hub", lifespan=lifespan)
+app = FastAPI(title="Home Hub", lifespan=lifespan)
 
 # CORS Middleware (obsługa localhost, 127.0.0.1, LiveServer i urządzeń w sieci)
 app.add_middleware(
@@ -680,17 +680,30 @@ def split_and_parse_shopping(raw_text: str) -> list[tuple[str, str]]:
     return results
 
 
+POLISH_CALENDAR_MONTHS = {
+    'stycz': 1, 'lut': 2, 'marz': 3, 'kwiet': 4, 'maj': 5, 'czerwc': 6,
+    'lip': 7, 'sierp': 8, 'wrześ': 9, 'wrzes': 9, 'październik': 10, 'pazdziernik': 10,
+    'listopad': 11, 'grudzi': 12
+}
+
+
 def parse_calendar_input(text: str, default_user: str = "Bartosz") -> tuple[str, str, str, str]:
     """Inteligentne rozpoznawanie daty, godziny, tytułu i kategorii:
     - 'kalendarz 15.11 dentysta 16:30' -> ('Dentysta', '2026-11-15', '16:30', 'Bartosz')
+    - 'Dodaj kalednarz wspolny szpital miejski 9 listopad usg' -> ('Szpital miejski usg', '2026-11-09', '', 'Wspólne')
     - 'śmieci jutro bio' -> ('Bio', '2026-11-03', '', 'Śmieci')
     - 'termin 20.11 wyjazd z rodzicami Daria' -> ('Wyjazd z rodzicami', '2026-11-20', '', 'Daria')
     """
     now = datetime.date.today()
     cleaned = text.strip()
+    
+    # Obsługa prefixów (w tym z literówkami i 'dodaj')
     for prefix in [
-        "/kalendarz ", "kalendarz ", "/termin ", "termin ", "/smieci ", "smieci ",
-        "/śmieci ", "śmieci ", "/wydarzenie ", "wydarzenie ", "/event ", "event "
+        "dodaj do kalendarza", "dodaj kalendarz", "dodaj kalednarz", "dodaj termin", "dodaj do terminu",
+        "dodaj wydarzenie", "dodaj wizytę", "dodaj wizyte", "dodaj spotkanie", "dodaj śmieci", "dodaj smieci",
+        "/kalendarz", "kalendarz", "/kalednarz", "kalednarz", "/termin", "termin",
+        "/smieci", "smieci", "/śmieci", "śmieci", "/wydarzenie", "wydarzenie",
+        "/spotkanie", "spotkanie", "/wizyta", "wizyta", "/event", "event"
     ]:
         if cleaned.lower().startswith(prefix):
             cleaned = cleaned[len(prefix):].strip()
@@ -700,11 +713,11 @@ def parse_calendar_input(text: str, default_user: str = "Bartosz") -> tuple[str,
     cat = "Wspólne"
     if any(k in lower for k in ['śmieci', 'smieci', 'bio', 'plastik', 'papier', 'zmieszane', 'odpady']):
         cat = "Śmieci"
-    elif 'daria' in lower:
+    elif any(k in lower for k in ['daria', 'darii']):
         cat = "Daria"
-    elif any(k in lower for k in ['bartosz', 'bartek']):
+    elif any(k in lower for k in ['bartosz', 'bartosza', 'bartek', 'bartka']):
         cat = "Bartosz"
-    elif any(k in lower for k in ['wspólne', 'wspolne', 'razem', 'dom']):
+    elif any(k in lower for k in ['wspólne', 'wspolne', 'wspólny', 'wspolny', 'razem', 'dom']):
         cat = "Wspólne"
     else:
         cat = "Daria" if default_user.lower() == "daria" else "Bartosz"
@@ -729,17 +742,32 @@ def parse_calendar_input(text: str, default_user: str = "Bartosz") -> tuple[str,
         event_date = str(now)
         cleaned = re.sub(r'\b(dzisiaj|dziś)\b', '', cleaned, flags=re.I).strip()
     else:
-        m_date = re.search(r'\b(\d{1,2})[./-](\d{1,2})(?:[./-](\d{4}))?\b', cleaned)
-        if m_date:
-            day = int(m_date.group(1))
-            month = int(m_date.group(2))
-            year = int(m_date.group(3)) if m_date.group(3) else now.year
-            event_date = f"{year:04d}-{month:02d}-{day:02d}"
-            cleaned = cleaned.replace(m_date.group(0), "").strip()
+        # Sprawdź polskie miesiące słownie, np. '9 listopad' lub '9 listopada'
+        m_month = re.search(r'\b(\d{1,2})\s+([a-zA-ZąćęłńóśźżĄĆĘŁŃÓŚŹŻ]+)(?:\s+(\d{4}))?\b', cleaned)
+        found_month = False
+        if m_month:
+            d_val = int(m_month.group(1))
+            m_word = m_month.group(2).lower()
+            for prefix_m, m_num in POLISH_CALENDAR_MONTHS.items():
+                if m_word.startswith(prefix_m):
+                    y_val = int(m_month.group(3)) if m_month.group(3) else now.year
+                    event_date = f"{y_val:04d}-{m_num:02d}-{d_val:02d}"
+                    cleaned = cleaned.replace(m_month.group(0), "").strip()
+                    found_month = True
+                    break
+        if not found_month:
+            m_date = re.search(r'\b(\d{1,2})[./-](\d{1,2})(?:[./-](\d{4}))?\b', cleaned)
+            if m_date:
+                day = int(m_date.group(1))
+                month = int(m_date.group(2))
+                year = int(m_date.group(3)) if m_date.group(3) else now.year
+                event_date = f"{year:04d}-{month:02d}-{day:02d}"
+                cleaned = cleaned.replace(m_date.group(0), "").strip()
 
     # Usunięcie zbędnych słów kluczowych z tytułu
-    cleaned = re.sub(r'\b(daria|bartosz|bartek|wspólne|wspolne)\b', '', cleaned, flags=re.I).strip()
-    cleaned = re.sub(r'^(o|w|na|ze|z|dla)\s+', '', cleaned, flags=re.I).strip()
+    cleaned = re.sub(r'\b(daria|darii|bartosz|bartosza|bartek|bartka|wspólne|wspolne|wspólny|wspolny)\b', '', cleaned, flags=re.I).strip()
+    cleaned = re.sub(r'^(o|w|na|ze|z|dla|do)\s+', '', cleaned, flags=re.I).strip()
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip()
     return cleaned.capitalize() or "Wydarzenie", event_date, time_str, cat
 
 
@@ -1059,7 +1087,7 @@ async def run_gemini_agent(
         logger.warning("Błąd szybkiego odczytu kontekstu: %s", e)
 
     # Zoptymalizowany, ultra-zwięzły prompt (zmniejsza zużycie tokenów o ponad 60%)
-    system_prompt = f"""Asystent domowy Nexus dla Bartosza i Darii (Gąsawa, 88-410). Dziś: {today_str} {now_time}.
+    system_prompt = f"""Asystent domowy Home Hub dla Bartosza i Darii (Gąsawa, 88-410). Dziś: {today_str} {now_time}.
 Aktywne zakupy: {shopping_text}.
 Nadchodzący kalendarz: {calendar_text}.
 Instrukcje:
@@ -1368,13 +1396,14 @@ async def telegram_webhook(update: dict):
     # 3. Komendy systemowe / pomoc
     if text.lower() in ("/start", "/help", "/pomoc"):
         help_msg = (
-            f"👋 Cześć <b>{sender}</b>! Jestem <b>Agentem AI Nexus Home Hub (Gemini 3.5)</b> 🧠🏠\n\n"
+            f"👋 Cześć <b>{sender}</b>! Jestem <b>Agentem AI Home Hub (Gemini 3.5)</b> 🧠🏠\n\n"
             "Możesz ze mną rozmawiać zupełnie swobodnie:\n\n"
             "🛒 <b>Zakupy:</b>\n"
             "• <i>'Kup 2 mleka, 5 bułek i sok'</i>\n"
             "• <i>'Dopisz składniki na pizzę dla 4 osób'</i>\n"
             "• <i>'Kupiłem masło i chleb, skreśl je'</i>\n\n"
             "📅 <b>Kalendarz & Śmieci:</b>\n"
+            "• <i>'Dodaj kalendarz wspólny szpital miejski 9 listopad usg'</i>\n"
             "• <i>'Jutro o 16:30 dentysta dla Darii'</i>\n"
             "• <i>'Wywóz plastiku w piątek'</i>\n"
             "• <i>'Kiedy mamy najbliższy wywóz bio?'</i>\n\n"
@@ -1389,9 +1418,9 @@ async def telegram_webhook(update: dict):
     # 4. Szybkie skróty podglądu (komendy natywne)
     if text.lower() in ("/lista", "lista", "/zakupy", "zakupy"):
         url = f"{SUPABASE_URL}/rest/v1/home_shopping?is_bought=eq.false&order=id.asc"
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(url, headers=supabase_headers())
-            items = resp.json() if resp.status_code == 200 else []
+        client = get_http_client()
+        resp = await client.get(url, headers=supabase_headers())
+        items = resp.json() if resp.status_code == 200 else []
 
         if not items:
             await reply_telegram(chat_id, "🎉 <b>Lista zakupów jest pusta!</b> Wszystko kupione.")
@@ -1422,12 +1451,29 @@ async def telegram_webhook(update: dict):
             await reply_telegram(chat_id, "\n".join(lines))
         return {"ok": True}
 
+    # Słowa kluczowe wskazujące na zamiar kalendarza / wydarzenia
+    CALENDAR_KEYWORDS = [
+        "kalendarz", "kalednarz", "termin", "wydarzen", "spotkan", "wizyt",
+        "lekarz", "szpital", "doktor", "badani", "usg", "dentyst", "stomatolog",
+        "urodzin", "imienin", "rocznic",
+        "śmieci", "smieci", "odpad", "wywóz", "wywoz", "odbior", "odbiór", "bio", "plastik", "papier", "szkło", "szklo",
+        "listopad", "grudzi", "stycz", "lut", "marz", "kwiet", "maj", "czerwc", "lip", "sierp", "wrześ", "wrzes", "październik", "pazdziernik",
+        "jutro", "pojutrze", "dzisiaj", "dziś"
+    ]
+    has_calendar_keyword = any(k in text.lower() for k in CALENDAR_KEYWORDS)
+
     # 5. SZYBKA ŚCIEŻKA (FAST-PATH) - Natychmiastowa obsługa (<50ms) bez zużywania limitów/tokenów AI
-    # A. Bezpośrednie komendy kalendarza (np. "termin dentysta jutro 16:00", "/smieci plastik piątek")
-    is_calendar_prefix = any(text.lower().startswith(p) for p in [
-        "/kalendarz ", "kalendarz ", "/termin ", "termin ", "/smieci ", "smieci ",
-        "/śmieci ", "śmieci ", "/wydarzenie ", "wydarzenie "
-    ])
+    # A. Bezpośrednie komendy kalendarza (np. "termin dentysta jutro 16:00", "Dodaj kalednarz ...", "śmieci piątek")
+    CALENDAR_PREFIXES = [
+        "/kalendarz", "kalendarz", "/kalednarz", "kalednarz",
+        "/termin", "termin", "/smieci", "smieci", "/śmieci", "śmieci",
+        "/wydarzenie", "wydarzenie", "/spotkanie", "spotkanie", "/wizyta", "wizyta",
+        "dodaj kalendarz", "dodaj kalednarz", "dodaj do kalendarza", "dodaj termin",
+        "dodaj do terminu", "dodaj wydarzenie", "dodaj wizytę", "dodaj wizyte",
+        "dodaj spotkanie", "dodaj śmieci", "dodaj smieci"
+    ]
+    is_calendar_prefix = any(text.lower().startswith(p) for p in CALENDAR_PREFIXES)
+
     if is_calendar_prefix:
         title, ev_date, ev_time, cat = parse_calendar_input(text, sender)
         pending_events = [{
@@ -1440,7 +1486,14 @@ async def telegram_webhook(update: dict):
         return {"ok": True}
 
     # B. Bezpośrednie komendy zakupów (np. "kup 2 mleka, 5 bułek i masło", "/kup chleb")
-    is_shopping_prefix = any(text.lower().startswith(p) for p in ["/kup ", "kup ", "/dodaj ", "dodaj "])
+    # WAŻNE: Szybka ścieżka zakupów uruchamia się TYLKO gdy tekst NIE zawiera słów kluczowych kalendarza!
+    is_shopping_prefix = False
+    if not has_calendar_keyword:
+        is_shopping_prefix = any(text.lower().startswith(p) for p in [
+            "/kup ", "kup ", "/dodaj do listy ", "dodaj do listy ", "/dodaj do zakupów ", "dodaj do zakupów ",
+            "/dodaj ", "dodaj "
+        ])
+
     if is_shopping_prefix:
         parsed_items = split_and_parse_shopping(text)
         if parsed_items:
@@ -1470,24 +1523,25 @@ async def telegram_webhook(update: dict):
             await reply_telegram(chat_id, reply)
         return {"ok": True}
 
-    # 7. AWARYJNY FALLBACK (gdyby Gemini było offline, a użytkownik wpisał zakupy)
-    parsed_items = split_and_parse_shopping(text)
-    if parsed_items:
-        client = get_http_client()
-        url = f"{SUPABASE_URL}/rest/v1/home_shopping"
-        db_tasks = [
-            client.post(
-                url,
-                headers=supabase_headers(),
-                json={"item": item_name, "quantity": qty, "category": "Wszystko", "added_by": f"TG: {sender}"}
-            )
-            for item_name, qty in parsed_items if item_name
-        ]
-        if db_tasks:
-            await asyncio.gather(*db_tasks, return_exceptions=True)
-            await ws_manager.broadcast_refresh("shopping")
-            added_summary = [f"{it} ({q})" if q != "1" else it for it, q in parsed_items if it]
-            await reply_telegram(chat_id, f"✅ <b>Dodano do listy ({sender}):</b>\n• " + "\n• ".join(added_summary))
+    # 7. AWARYJNY FALLBACK (gdyby Gemini było offline, a użytkownik wpisał zakupy bez słów kalendarzowych)
+    if not has_calendar_keyword:
+        parsed_items = split_and_parse_shopping(text)
+        if parsed_items:
+            client = get_http_client()
+            url = f"{SUPABASE_URL}/rest/v1/home_shopping"
+            db_tasks = [
+                client.post(
+                    url,
+                    headers=supabase_headers(),
+                    json={"item": item_name, "quantity": qty, "category": "Wszystko", "added_by": f"TG: {sender}"}
+                )
+                for item_name, qty in parsed_items if item_name
+            ]
+            if db_tasks:
+                await asyncio.gather(*db_tasks, return_exceptions=True)
+                await ws_manager.broadcast_refresh("shopping")
+                added_summary = [f"{it} ({q})" if q != "1" else it for it, q in parsed_items if it]
+                await reply_telegram(chat_id, f"✅ <b>Dodano do listy ({sender}):</b>\n• " + "\n• ".join(added_summary))
 
     return {"ok": True}
 
