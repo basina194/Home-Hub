@@ -401,8 +401,9 @@ async def get_weather():
     url = (
         f"https://api.open-meteo.com/v1/forecast"
         f"?latitude={LATITUDE}&longitude={LONGITUDE}"
-        f"&current=temperature_2m,wind_speed_10m"
-        f"&daily=precipitation_probability_max&timezone=Europe%2FWarsaw&forecast_days=1"
+        f"&current=temperature_2m,wind_speed_10m,weather_code"
+        f"&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max"
+        f"&timezone=Europe%2FWarsaw&forecast_days=7"
     )
     client = get_http_client()
     resp = await client.get(url)
