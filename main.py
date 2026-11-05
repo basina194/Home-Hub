@@ -8,6 +8,7 @@ import datetime
 import time
 import uuid
 import logging
+import secrets
 from typing import List, Optional
 from contextlib import asynccontextmanager
 
@@ -35,8 +36,10 @@ HA_URL = os.environ.get("HA_URL", "").rstrip("/")
 HA_TOKEN = os.environ.get("HA_TOKEN", "")
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
-WIFE_TELEGRAM_ID = "9216839954"
-BARTOSZ_TELEGRAM_ID = "7939517140"
+TELEGRAM_WEBHOOK_SECRET = os.environ.get("TELEGRAM_WEBHOOK_SECRET", "")
+WIFE_TELEGRAM_ID = os.environ.get("WIFE_TELEGRAM_ID", "9216839954")
+BARTOSZ_TELEGRAM_ID = os.environ.get("BARTOSZ_TELEGRAM_ID", "7939517140")
+TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN", "")
 LATITUDE = os.environ.get("LATITUDE", "52.7676")
 LONGITUDE = os.environ.get("LONGITUDE", "17.7558")
 
@@ -58,9 +61,63 @@ def get_poland_time() -> datetime.datetime:
     return now_utc.astimezone(datetime.timezone(datetime.timedelta(hours=offset)))
 
 
-def verify_pin(x_app_pin: Optional[str] = Header(None)) -> None:
-    if x_app_pin != APP_PIN:
+# --- OCHRONA PRZED BRUTE-FORCE I WERYFIKACJA PIN ---
+PIN_FAILED_ATTEMPTS: dict[str, list[float]] = {}
+PIN_BLOCKED_IPS: dict[str, float] = {}
+MAX_PIN_FAILURES = 5
+PIN_LOCKOUT_SECONDS = 900  # 15 minut blokady IP po 5 błędnych próbach
+PIN_WINDOW_SECONDS = 60    # w oknie 1 minuty
+
+
+def get_client_ip(request: Request) -> str:
+    """Pobiera rzeczywisty adres IP klienta uwzględniając proxy (Render, Cloudflare itp.)."""
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def verify_pin(request: Request, x_app_pin: Optional[str] = Header(None)) -> None:
+    """Weryfikuje nagłówek x-app-pin z odpornością na ataki czasowe i blokadą brute-force."""
+    client_ip = get_client_ip(request)
+    now = time.time()
+
+    # Sprawdzenie czy IP jest zablokowane
+    if client_ip in PIN_BLOCKED_IPS:
+        blocked_until = PIN_BLOCKED_IPS[client_ip]
+        if now < blocked_until:
+            remaining = int(blocked_until - now)
+            logger.warning("Odrzucono zapytanie ze zablokowanego IP %s (pozostało %ds)", client_ip, remaining)
+            raise HTTPException(
+                status_code=429,
+                detail=f"Zbyt wiele błędnych prób logowania. Dostęp zablokowany na {remaining} sekund."
+            )
+        else:
+            del PIN_BLOCKED_IPS[client_ip]
+            PIN_FAILED_ATTEMPTS.pop(client_ip, None)
+
+    # Bezpieczne porównanie stałoczasowe (Timing Attack Prevention)
+    is_valid = secrets.compare_digest(x_app_pin or "", APP_PIN) if APP_PIN else False
+    if not is_valid:
+        attempts = PIN_FAILED_ATTEMPTS.setdefault(client_ip, [])
+        attempts = [t for t in attempts if now - t < PIN_WINDOW_SECONDS]
+        attempts.append(now)
+        PIN_FAILED_ATTEMPTS[client_ip] = attempts
+
+        if len(attempts) >= MAX_PIN_FAILURES:
+            PIN_BLOCKED_IPS[client_ip] = now + PIN_LOCKOUT_SECONDS
+            logger.warning("ZABLOKOWANO IP %s na 15 minut z powodu %d błędnych prób PIN", client_ip, len(attempts))
+            raise HTTPException(
+                status_code=429,
+                detail="Zbyt wiele błędnych prób logowania. Adres IP został zablokowany na 15 minut."
+            )
+
+        logger.warning("Błędny kod PIN z IP %s (próba %d/%d)", client_ip, len(attempts), MAX_PIN_FAILURES)
         raise HTTPException(status_code=401, detail="Błędny kod PIN.")
+
+    # Reset historii po udanym logowaniu
+    if client_ip in PIN_FAILED_ATTEMPTS:
+        del PIN_FAILED_ATTEMPTS[client_ip]
 
 
 def supabase_headers() -> dict:
@@ -325,6 +382,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+# Security Headers Middleware
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "SAMEORIGIN"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    return response
+
 os.makedirs("static", exist_ok=True)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
@@ -387,6 +455,12 @@ async def serve_sw():
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
+    # Weryfikacja PIN dla połączeń WebSocket
+    pin = websocket.query_params.get("pin", "")
+    if not APP_PIN or not secrets.compare_digest(pin, APP_PIN):
+        await websocket.close(code=1008)  # 1008: Policy Violation
+        return
+
     await ws_manager.connect(websocket)
     try:
         while True:
@@ -1267,14 +1341,34 @@ Instrukcje:
         logger.error("Błąd wykonania Agenta Gemini: %s", exc)
         return "", False, []
 
-    except Exception as exc:
-        logger.error("Błąd wykonania Agenta Gemini: %s", exc)
-        return "", False, []
+
+def check_telegram_authorization(user_id_str: str, chat_id_str: str) -> tuple[bool, str]:
+    """Weryfikuje czy nadawca jest uprawnionym domownikiem (Daria lub Bartosz).
+    Wszyscy inni są bezwzględnie blokowani.
+    """
+    valid_daria = {str(WIFE_TELEGRAM_ID).strip()} - {"", "None"}
+    valid_bartosz = {str(BARTOSZ_TELEGRAM_ID).strip(), str(TELEGRAM_CHAT_ID).strip()} - {"", "None"}
+
+    u_str = str(user_id_str or "").strip()
+    c_str = str(chat_id_str or "").strip()
+
+    if (u_str and u_str in valid_daria) or (c_str and c_str in valid_daria):
+        return True, "Daria"
+    if (u_str and u_str in valid_bartosz) or (c_str and c_str in valid_bartosz):
+        return True, "Bartosz"
+    return False, ""
 
 
 # --- TELEGRAM WEBHOOK ---
 @app.post("/api/webhook/telegram")
-async def telegram_webhook(update: dict):
+async def telegram_webhook(request: Request, update: dict):
+    # Weryfikacja Secret Token Telegrama (jeśli skonfigurowany w środowisku)
+    if TELEGRAM_WEBHOOK_SECRET:
+        secret_header = request.headers.get("x-telegram-bot-api-secret-token", "")
+        if not secrets.compare_digest(secret_header, TELEGRAM_WEBHOOK_SECRET):
+            logger.warning("Odrzucono zapytanie do webhooka Telegram: nieprawidłowy nagłówek Secret Token")
+            raise HTTPException(status_code=403, detail="Brak uprawnień.")
+
     # 0. Obsługa kliknięć w przyciski Inline (callback_query)
     if "callback_query" in update:
         cq = update["callback_query"]
@@ -1285,7 +1379,13 @@ async def telegram_webhook(update: dict):
         message_id = msg.get("message_id")
         from_user = cq.get("from", {})
         from_id_str = str(from_user.get("id", ""))
-        user_name = "Daria" if from_id_str == WIFE_TELEGRAM_ID else "Bartosz"
+        chat_id_str = str(chat_id) if chat_id else ""
+
+        is_auth, user_name = check_telegram_authorization(from_id_str, chat_id_str)
+        if not is_auth:
+            logger.warning("ZABLOKOWANO nieautoryzowany callback Telegram od ID: %s (chat %s)", from_id_str, chat_id_str)
+            await answer_telegram_callback(cq_id, "⛔ Brak dostępu. Bot jest prywatny.")
+            return {"ok": True}
 
         await handle_calendar_callback(cq_id, chat_id, message_id, data, user_name)
         return {"ok": True}
@@ -1308,13 +1408,18 @@ async def telegram_webhook(update: dict):
     user_id_str = str(raw_sender.get("id", ""))
     chat_id_str = str(chat_id)
 
-    # Rozpoznanie: Daria / Bartosz
-    if user_id_str == WIFE_TELEGRAM_ID or chat_id_str == WIFE_TELEGRAM_ID:
-        sender = "Daria"
-    else:
-        sender = "Bartosz"
+    # Ścisła autoryzacja nadawcy: Daria lub Bartosz
+    is_auth, sender = check_telegram_authorization(user_id_str, chat_id_str)
+    if not is_auth:
+        logger.warning(
+            "ODRZUCONO nieautoryzowaną wiadomość Telegram od nieznanego użytkownika: user_id=%s, chat_id=%s",
+            user_id_str,
+            chat_id_str
+        )
+        await reply_telegram(chat_id, "⛔ Dostęp zablokowany. Ten bot jest prywatnym asystentem domowym.")
+        return {"ok": True}
 
-    # Automatyczna rejestracja subskrybenta powiadomień w Supabase
+    # Bezpieczna rejestracja/aktualizacja subskrybenta powiadomień w Supabase
     try:
         async with httpx.AsyncClient(timeout=4.0) as client:
             await client.post(
@@ -1550,6 +1655,10 @@ async def telegram_webhook(update: dict):
 # --- WHATSAPP WEBHOOK (TWILIO) ---
 @app.post("/api/webhook/whatsapp")
 async def whatsapp_webhook(request: Request):
+    if not TWILIO_AUTH_TOKEN:
+        logger.warning("Zablokowano próbę wywołania /api/webhook/whatsapp: integracja Twilio nie jest skonfigurowana.")
+        raise HTTPException(status_code=404, detail="Webhook wyłączony.")
+
     body = ""
     sender = "WhatsApp"
     try:
