@@ -435,6 +435,26 @@ async def serve_pwa():
     )
 
 
+@app.head("/")
+async def serve_pwa_head():
+    """Obsługa zapytań HEAD z monitoringu i cronów (0 bajtów)."""
+    return Response(content=b"", media_type="text/html")
+
+
+# --- ULTRA-LEKKIE ENDPOINTY KEEP-ALIVE DLA CRON-JOB.ORG / UPTIME ---
+@app.get("/ping")
+@app.head("/ping")
+@app.get("/healthz")
+@app.head("/healthz")
+@app.get("/api/cron/keepalive")
+@app.head("/api/cron/keepalive")
+async def keepalive_ping():
+    """Ultra-lekki endpoint (2 bajty 'OK') dedykowany pod cron-job.org / UptimeRobot.
+    Utrzymuje darmowy serwer Render wybudzonym bez ryzyka przekroczenia limitu rozmiaru odpowiedzi.
+    """
+    return Response(content="OK", media_type="text/plain")
+
+
 @app.get("/manifest.json")
 async def serve_manifest():
     return FileResponse("static/manifest.json")
@@ -567,11 +587,15 @@ async def delete_calendar_event(event_id: int):
     return {"status": "ok"}
 
 
-@app.post("/api/home/reminders/trigger", dependencies=[Depends(verify_pin)])
-async def trigger_reminders_manually():
-    """Ręczne sprawdzenie i wysyłka przypomnień kalendarza."""
+@app.api_route("/api/home/reminders/trigger", methods=["GET", "POST"])
+@app.api_route("/api/cron/reminders", methods=["GET", "POST"])
+async def trigger_reminders_cron(request: Request):
+    """Sprawdzenie i wysyłka przypomnień kalendarza.
+    Obsługuje GET i POST z zewnętrznego crona (np. cron-job.org) oraz wywołania z aplikacji.
+    Zwraca ultra-krótką odpowiedź tekstową 2 bajty ('OK'), co zapobiega błędowi 'zbyt duży rozmiar danych wyjściowych'.
+    """
     await check_and_send_calendar_reminders()
-    return {"status": "ok", "message": "Pomyślnie sprawdzono przypomnienia"}
+    return Response(content="OK", media_type="text/plain")
 
 
 # --- MODUŁ FIRMA (SUPABASE) ---

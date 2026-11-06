@@ -583,19 +583,27 @@
       return chunks.map(chunk => parsePolishItem(chunk));
     }
 
+    function getPin() {
+      return (appPin || localStorage.getItem('nexus_app_pin') || '9045').trim();
+    }
+
     function getHeaders() {
       return {
         'Content-Type': 'application/json',
-        'X-App-Pin': appPin
+        'X-App-Pin': getPin()
       };
     }
 
     function changePinPrompt() {
-      const newPin = prompt('Wprowadź kod PIN aplikacji (np. 9045):', appPin);
+      const newPin = prompt('Wprowadź kod PIN aplikacji (np. 9045):', getPin());
       if (newPin) {
         appPin = newPin.trim();
         localStorage.setItem('nexus_app_pin', appPin);
         refreshAllData();
+        if (socket) {
+          try { socket.close(); } catch (_) {}
+        }
+        initWebSocket();
       }
     }
 
@@ -1432,38 +1440,51 @@
       const indicator = document.getElementById('ws-indicator');
       const status = document.getElementById('ws-status');
 
-      const pin = getPin();
-      const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${protocol}//${location.host}/ws?pin=${encodeURIComponent(pin)}`;
+      try {
+        const pin = getPin();
+        const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${protocol}//${location.host}/ws?pin=${encodeURIComponent(pin)}`;
 
-      socket = new WebSocket(wsUrl);
-
-      socket.onopen = () => {
-        indicator.className = "w-2 h-2 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400/50";
-        status.innerText = "Na żywo";
-      };
-
-      socket.onmessage = (event) => {
-        try {
-          const msg = JSON.parse(event.data);
-          if (msg.action === 'refresh') {
-            if (msg.module === 'shopping') fetchShopping(false);
-            if (msg.module === 'calendar') fetchCalendar(false);
-          }
-        } catch (e) {
-          console.error('WS Parse error', e);
+        if (socket) {
+          try { socket.close(); } catch (_) {}
         }
-      };
 
-      socket.onclose = () => {
-        indicator.className = "w-2 h-2 rounded-full bg-rose-500 animate-pulse";
-        status.innerText = "Ponawianie...";
-        setTimeout(initWebSocket, 3500);
-      };
+        socket = new WebSocket(wsUrl);
 
-      socket.onerror = () => {
-        socket.close();
-      };
+        socket.onopen = () => {
+          if (indicator) indicator.className = "w-2 h-2 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400/50";
+          if (status) status.innerText = "Na żywo";
+        };
+
+        socket.onmessage = (event) => {
+          try {
+            const msg = JSON.parse(event.data);
+            if (msg.action === 'refresh') {
+              if (msg.module === 'shopping') fetchShopping(false);
+              if (msg.module === 'calendar') fetchCalendar(false);
+            }
+          } catch (e) {
+            console.error('WS Parse error', e);
+          }
+        };
+
+        socket.onclose = (event) => {
+          if (event && event.code === 1008) {
+            if (indicator) indicator.className = "w-2 h-2 rounded-full bg-amber-500";
+            if (status) status.innerText = "Błędny PIN";
+            return;
+          }
+          if (indicator) indicator.className = "w-2 h-2 rounded-full bg-rose-500 animate-pulse";
+          if (status) status.innerText = "Ponawianie...";
+          setTimeout(initWebSocket, 4000);
+        };
+
+        socket.onerror = () => {
+          try { socket.close(); } catch (_) {}
+        };
+      } catch (err) {
+        console.error('Błąd WebSocket:', err);
+      }
     }
 
     function refreshAllData() {
@@ -1484,7 +1505,7 @@
 
     // Auto-update Service Worker
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js?v=6').then(reg => {
+      navigator.serviceWorker.register('/sw.js?v=7').then(reg => {
         reg.update();
       }).catch(err => console.log('SW fail:', err));
     }
@@ -1501,8 +1522,20 @@
       const calDateEl = document.getElementById('cal-date');
       if (calDateEl) calDateEl.value = todayIso;
 
-      initWebSocket();
-      refreshAllData();
+      // Najpierw natychmiastowe załadowanie danych z bazy (0ms UI)
+      try {
+        refreshAllData();
+      } catch (e) {
+        console.error("Błąd podczas pobierania danych:", e);
+      }
+
+      // Następnie podłączenie synchronizacji na żywo WebSocket
+      try {
+        initWebSocket();
+      } catch (e) {
+        console.error("Błąd podczas inicjalizacji WebSocket:", e);
+      }
+
       setInterval(fetchWeather, 300000);
     });
   </script>
