@@ -868,16 +868,71 @@ def parse_polish_item(raw: str) -> tuple[str, str]:
     return raw, "1"
 
 
+SHOPPING_COMMAND_PREFIXES = [
+    "/dodaj do listy zakupów", "dodaj do listy zakupów",
+    "/dodaj do listy zakupow", "dodaj do listy zakupow",
+    "/dodaj na listę zakupów", "dodaj na listę zakupów",
+    "/dodaj na liste zakupow", "dodaj na liste zakupow",
+    "/dopisz do listy zakupów", "dopisz do listy zakupów",
+    "/dopisz do listy zakupow", "dopisz do listy zakupow",
+    "/dopisz na listę zakupów", "dopisz na listę zakupów",
+    "/dopisz na liste zakupow", "dopisz na liste zakupow",
+    "/dodaj do zakupów", "dodaj do zakupów",
+    "/dodaj do zakupow", "dodaj do zakupow",
+    "/dopisz do zakupów", "dopisz do zakupów",
+    "/dopisz do zakupow", "dopisz do zakupow",
+    "/dodaj do listy", "dodaj do listy",
+    "/dopisz do listy", "dopisz do listy",
+    "/dodaj na zakupy", "dodaj na zakupy",
+    "/dopisz na zakupy", "dopisz na zakupy",
+    "/dodaj na listę", "dodaj na listę",
+    "/dodaj na liste", "dodaj na liste",
+    "/dopisz na listę", "dopisz na listę",
+    "/dopisz na liste", "dopisz na liste",
+    "/do listy zakupów", "do listy zakupów",
+    "/do listy zakupow", "do listy zakupow",
+    "/na listę zakupów", "na listę zakupów",
+    "/na liste zakupow", "na liste zakupow",
+    "/lista zakupów", "lista zakupów",
+    "/lista zakupow", "lista zakupow",
+    "/do zakupów", "do zakupów",
+    "/do zakupow", "do zakupow",
+    "/do listy", "do listy",
+    "/na zakupy", "na zakupy",
+    "/na listę", "na listę",
+    "/na liste", "na liste",
+    "/zakupy", "zakupy",
+    "/kupić", "kupić",
+    "/kupic", "kupic",
+    "/kup", "kup",
+    "/dopisz", "dopisz",
+    "/dodaj", "dodaj",
+    "/wrzuć", "wrzuć",
+    "/wrzuc", "wrzuc"
+]
+
+
+def strip_shopping_prefixes(text: str) -> str:
+    """Usuwa komendy i prefiksy zakupowe (np. 'dodaj do zakupów', 'kup', 'na listę:')."""
+    cleaned = text.strip()
+    sorted_prefixes = sorted(SHOPPING_COMMAND_PREFIXES, key=len, reverse=True)
+    low = cleaned.lower()
+    for prefix in sorted_prefixes:
+        if low.startswith(prefix):
+            rest = cleaned[len(prefix):]
+            if not rest or rest[0] in " \t:\n-,":
+                cleaned = rest.lstrip(" \t:\n-,")
+                low = cleaned.lower()
+                break
+    return cleaned
+
+
 def split_and_parse_shopping(raw_text: str) -> list[tuple[str, str]]:
     """Rozbija tekst zakupów na poszczególne produkty z ilościami, nawet gdy nie ma przecinków
     (np. '2 jajka 3 mleka 5 bułek i sok' -> [('jajka', '2'), ('mleka', '3'), ('bułek', '5'), ('sok', '1')])
     oraz zamienia liczebniki słowne ('trzy mleka i chleb' -> [('mleka', '3'), ('chleb', '1')]).
     """
-    cleaned = raw_text.strip()
-    for prefix in ['/kup ', 'kup ', '/dodaj ', 'dodaj ']:
-        if cleaned.lower().startswith(prefix):
-            cleaned = cleaned[len(prefix):].strip()
-            break
+    cleaned = strip_shopping_prefixes(raw_text)
 
     # 1. Zamiana słownych liczebników na cyfry
     for word, num in POLISH_NUM_WORDS.items():
@@ -904,9 +959,12 @@ def split_and_parse_shopping(raw_text: str) -> list[tuple[str, str]]:
     chunks = [c.strip() for c in re.split(r'[,;\n]+', cleaned) if c.strip()]
     results = []
     for chunk in chunks:
-        item_name, qty = parse_polish_item(chunk)
+        chunk_clean = strip_shopping_prefixes(chunk)
+        item_name, qty = parse_polish_item(chunk_clean or chunk)
         if item_name:
-            results.append((item_name, qty))
+            # Estetyczna pierwsza wielka litera
+            clean_item = item_name[0].upper() + item_name[1:] if len(item_name) > 1 else item_name.upper()
+            results.append((clean_item, qty))
     return results
 
 
@@ -1638,7 +1696,7 @@ async def run_gemini_agent(
 Aktywne zakupy: {shopping_text}.
 Nadchodzący kalendarz: {calendar_text}.
 Instrukcje:
-1. Zakupy -> 'add_shopping' (nazwy, ilości).
+1. Zakupy -> 'add_shopping' (nazwy, ilości). Nigdy nie wstawiaj do nazwy produktu prefiksów takich jak 'dodaj do zakupów', 'kup', 'na listę'.
 2. Kupione rzeczy ('kupiłem', 'skreśl') -> 'complete_shopping'.
 3. Terminy/wydarzenia/śmieci (tekst/foto/głos) -> 'add_calendar' ('calendar_event' lub 'calendar_events', kategoria: Bartosz/Daria/Wspólne/Śmieci).
 4. W polu 'reply' napisz zwięzłą, naturalną odpowiedź (1-2 zdania, emoji)."""
@@ -2134,10 +2192,11 @@ async def telegram_webhook(request: Request, update: dict):
     # WAŻNE: Szybka ścieżka zakupów uruchamia się TYLKO gdy tekst NIE zawiera słów kluczowych kalendarza!
     is_shopping_prefix = False
     if not has_calendar_keyword:
-        is_shopping_prefix = any(text.lower().startswith(p) for p in [
-            "/kup ", "kup ", "/dodaj do listy ", "dodaj do listy ", "/dodaj do zakupów ", "dodaj do zakupów ",
-            "/dodaj ", "dodaj "
-        ])
+        low_text = text.strip().lower()
+        is_shopping_prefix = any(
+            low_text.startswith(p + " ") or low_text.startswith(p + ":") or low_text.startswith(p + ",") or low_text == p
+            for p in SHOPPING_COMMAND_PREFIXES
+        )
 
     if is_shopping_prefix:
         parsed_items = split_and_parse_shopping(text)
