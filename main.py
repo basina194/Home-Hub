@@ -229,18 +229,144 @@ async def send_telegram_alert(message: str, category: str = "Wspólne") -> None:
                 logger.error("Błąd wysyłki Telegram do %s (kat: %s): %s", tid, category, exc)
 
 
+SUNDAY_SUMMARY_CACHE_FILE = ".last_sunday_summary"
+
+
+def was_sunday_summary_sent(sunday_date_str: str) -> bool:
+    try:
+        if os.path.exists(SUNDAY_SUMMARY_CACHE_FILE):
+            with open(SUNDAY_SUMMARY_CACHE_FILE, "r", encoding="utf-8") as f:
+                return f.read().strip() == sunday_date_str
+    except Exception:
+        pass
+    return False
+
+
+def mark_sunday_summary_sent(sunday_date_str: str) -> None:
+    try:
+        with open(SUNDAY_SUMMARY_CACHE_FILE, "w", encoding="utf-8") as f:
+            f.write(sunday_date_str)
+    except Exception:
+        pass
+
+
+async def send_sunday_weekly_summary(now: datetime.datetime):
+    """Wysyła w każdą niedzielę o 19:00 spersonalizowane podsumowanie wydarzeń
+    na cały nadchodzący tydzień (od poniedziałku do niedzieli).
+    """
+    if not SUPABASE_URL or not SUPABASE_KEY or not TELEGRAM_BOT_TOKEN:
+        return
+
+    today = now.date()
+    monday = today + datetime.timedelta(days=1)
+    next_sunday = today + datetime.timedelta(days=7)
+
+    url = (
+        f"{SUPABASE_URL}/rest/v1/home_calendar"
+        f"?event_date=gte.{monday}&event_date=lte.{next_sunday}"
+        f"&order=event_date.asc,event_time.asc"
+    )
+
+    try:
+        client = get_http_client()
+        resp = await client.get(url, headers=supabase_headers())
+        if resp.status_code != 200:
+            return
+        events = resp.json()
+        if not isinstance(events, list):
+            return
+
+        cat_icons = {"Bartosz": "🧔", "Daria": "🌸", "Wspólne": "🏡", "Śmieci": "🗑️"}
+        days_names = ["Poniedziałek", "Wtorek", "Środa", "Czwartek", "Piątek", "Sobota", "Niedziela"]
+
+        def build_user_summary(user_name: str, allowed_categories: set) -> str:
+            user_events = [e for e in events if e.get("category", "Wspólne") in allowed_categories]
+            header = (
+                f"🗓️ <b>PLAN NA NOWY TYDZIEŃ ({monday.strftime('%d.%m')} – {next_sunday.strftime('%d.%m')}):</b>\n"
+                f"Cześć <b>{user_name}</b>! Oto Twoje plany i wydarzenia na nadchodzący tydzień:\n\n"
+            )
+            if not user_events:
+                return (
+                    f"{header}"
+                    f"✨ <i>Brak zaplanowanych wydarzeń na ten tydzień. Czas na odpoczynek i spokój!</i>"
+                )
+
+            events_by_date = {}
+            for e in user_events:
+                d_str = e.get("event_date", "")
+                events_by_date.setdefault(d_str, []).append(e)
+
+            body_lines = []
+            for d_str in sorted(events_by_date.keys()):
+                try:
+                    d_obj = datetime.date.fromisoformat(d_str)
+                    d_name = days_names[d_obj.weekday()]
+                    date_label = f"📅 <b>{d_name} ({d_obj.strftime('%d.%m')}):</b>"
+                except Exception:
+                    date_label = f"📅 <b>{d_str}:</b>"
+
+                body_lines.append(date_label)
+                for item in events_by_date[d_str]:
+                    t = item.get("title", "Wydarzenie")
+                    tm = item.get("event_time", "").strip()
+                    c = item.get("category", "Wspólne")
+                    ic = cat_icons.get(c, "📌")
+                    time_str = f" o godz. <b>{tm}</b>" if tm else " (cały dzień)"
+                    body_lines.append(f"  • {ic} <b>{t}</b>{time_str} <i>[{c}]</i>")
+                body_lines.append("")
+
+            footer = "💪 <i>Życzę udanego i spokojnego tygodnia!</i>"
+            return header + "\n".join(body_lines) + "\n" + footer
+
+        summary_bartosz = build_user_summary("Bartosz", {"Bartosz", "Wspólne", "Śmieci"})
+        summary_daria = build_user_summary("Daria", {"Daria", "Wspólne", "Śmieci"})
+
+        if BARTOSZ_TELEGRAM_ID:
+            await client.post(
+                f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                json={"chat_id": BARTOSZ_TELEGRAM_ID, "text": summary_bartosz, "parse_mode": "HTML"}
+            )
+        if TELEGRAM_CHAT_ID and str(TELEGRAM_CHAT_ID) != str(BARTOSZ_TELEGRAM_ID) and str(TELEGRAM_CHAT_ID) != str(WIFE_TELEGRAM_ID):
+            await client.post(
+                f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                json={"chat_id": TELEGRAM_CHAT_ID, "text": summary_bartosz, "parse_mode": "HTML"}
+            )
+
+        if WIFE_TELEGRAM_ID:
+            await client.post(
+                f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                json={"chat_id": WIFE_TELEGRAM_ID, "text": summary_daria, "parse_mode": "HTML"}
+            )
+
+        logger.info("Pomyślnie wysłano niedzielne podsumowanie tygodniowe do domowników.")
+    except Exception as exc:
+        logger.error("Błąd podczas wysyłania niedzielnego podsumowania: %s", exc)
+
+
 async def check_and_send_calendar_reminders():
     """Sprawdza reguły powiadomień:
-    - Dla śmieci: 1 dzień przed oraz w dniu wywozu rano (od godz. 6:00)
-    - Dla pozostałych wydarzeń: 7 dni przed, 1 dzień przed oraz na 1h przed wydarzeniem (o ile podano godzinę)
+    - W każdą niedzielę o 19:00: podsumowanie na cały nadchodzący tydzień
+    - Dla śmieci: 1 dzień przed o 9:00 oraz w dniu wywozu rano (od godz. 6:00)
+    - Dla pozostałych wydarzeń:
+        - Jeżeli jest podana godzina: dokładnie 24h przed rozpoczęciem
+        - Jeżeli brak godziny: dzień przed o 9:00 rano
+        - Oraz na 1h przed rozpoczęciem (o ile podano godzinę)
     """
     if not SUPABASE_URL or not SUPABASE_KEY or not TELEGRAM_BOT_TOKEN:
         return
 
     now = get_poland_time()
     today = now.date()
-    # Sprawdzamy okno od dziś do 8 dni do przodu
-    url = f"{SUPABASE_URL}/rest/v1/home_calendar?event_date=gte.{today}&event_date=lte.{today + datetime.timedelta(days=8)}&order=event_date.asc"
+
+    # 1. Niedzielne podsumowanie tygodnia o 19:00
+    if now.weekday() == 6 and now.hour >= 19:
+        today_str = str(today)
+        if not was_sunday_summary_sent(today_str):
+            await send_sunday_weekly_summary(now)
+            mark_sunday_summary_sent(today_str)
+
+    # 2. Sprawdzamy okno od dziś do 2 dni do przodu dla bieżących przypomnień
+    url = f"{SUPABASE_URL}/rest/v1/home_calendar?event_date=gte.{today}&event_date=lte.{today + datetime.timedelta(days=2)}&order=event_date.asc"
 
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -272,8 +398,8 @@ async def check_and_send_calendar_reminders():
 
                 # --- 1. REGUŁY DLA ŚMIECI ---
                 if is_waste:
-                    # 1 dzień przed
-                    if days_until == 1 and "smieci_1d_before" not in notified:
+                    # 1 dzień przed o 9:00 rano
+                    if days_until == 1 and now.hour >= 9 and "smieci_1d_before" not in notified:
                         msg = (
                             f"🗑️ <b>PRZYPOMNIENIE: WYWÓZ ŚMIECI JUTRO!</b>\n\n"
                             f"• Frakcja: <b>{title}</b>\n"
@@ -295,36 +421,41 @@ async def check_and_send_calendar_reminders():
 
                 # --- 2. REGUŁY DLA POZOSTAŁYCH WYDARZEŃ ---
                 else:
-                    time_info = f" o godz. <b>{ev_time}</b>" if ev_time else ""
-
-                    # 7 dni przed
-                    if days_until == 7 and "7d_before" not in notified:
-                        msg = (
-                            f"📅 <b>Przypomnienie (za 7 dni):</b>\n"
-                            f"• {icon} <b>{title}</b> <i>[{category}]</i>\n"
-                            f"• Termin: <b>{ev_date}</b>{time_info}"
-                        )
-                        await send_telegram_alert(msg, category=category)
-                        new_milestones.add("7d_before")
-
-                    # 1 dzień przed
-                    if days_until == 1 and "1d_before" not in notified:
-                        msg = (
-                            f"⏰ <b>Przypomnienie na JUTRO:</b>\n"
-                            f"• {icon} <b>{title}</b> <i>[{category}]</i>\n"
-                            f"• Termin: <b>{ev_date}</b>{time_info}"
-                        )
-                        await send_telegram_alert(msg, category=category)
-                        new_milestones.add("1d_before")
-
-                    # 1h przed wydarzeniem (o ile podano godzinę)
-                    if days_until == 0 and ev_time and "1h_before" not in notified:
+                    # A) Gdy jest podana godzina -> dokładnie 24h przed rozpoczęciem
+                    if ev_time and "24h_before" not in notified:
                         m_time = re.match(r"^(\d{1,2}):(\d{2})$", ev_time)
                         if m_time:
                             h = int(m_time.group(1))
                             m = int(m_time.group(2))
                             ev_dt = datetime.datetime.combine(ev_date, datetime.time(h, m)).replace(tzinfo=now.tzinfo)
-                            diff_minutes = (ev_dt - now).total_seconds() / 60
+                            diff_hours = (ev_dt - now).total_seconds() / 3600.0
+                            if 0 < diff_hours <= 24.1:
+                                msg = (
+                                    f"⏰ <b>Przypomnienie (za 24h):</b>\n"
+                                    f"• {icon} <b>{title}</b> <i>[{category}]</i>\n"
+                                    f"• Termin: <b>{ev_date}</b> o godz. <b>{ev_time}</b>"
+                                )
+                                await send_telegram_alert(msg, category=category)
+                                new_milestones.add("24h_before")
+
+                    # B) Gdy NIE ma podanej godziny -> dzień przed o 9:00 rano
+                    elif not ev_time and days_until == 1 and now.hour >= 9 and "1d_before" not in notified:
+                        msg = (
+                            f"⏰ <b>Przypomnienie na JUTRO:</b>\n"
+                            f"• {icon} <b>{title}</b> <i>[{category}]</i>\n"
+                            f"• Termin: <b>{ev_date}</b> (Cały dzień)"
+                        )
+                        await send_telegram_alert(msg, category=category)
+                        new_milestones.add("1d_before")
+
+                    # C) Przypomnienie 1h przed rozpoczęciem (o ile podano godzinę)
+                    if ev_time and "1h_before" not in notified:
+                        m_time = re.match(r"^(\d{1,2}):(\d{2})$", ev_time)
+                        if m_time:
+                            h = int(m_time.group(1))
+                            m = int(m_time.group(2))
+                            ev_dt = datetime.datetime.combine(ev_date, datetime.time(h, m)).replace(tzinfo=now.tzinfo)
+                            diff_minutes = (ev_dt - now).total_seconds() / 60.0
                             if 0 <= diff_minutes <= 65:
                                 msg = (
                                     f"🔔 <b>PRZYPOMNIENIE (ZA GODZINĘ):</b>\n"

@@ -8,5 +8,6 @@ env/
 venv/
 .DS_Store
 *.log
+.last_sunday_summary
 
 
