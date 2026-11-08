@@ -1045,6 +1045,38 @@ def cleanup_pending_actions() -> None:
         PENDING_CALENDAR_ACTIONS.pop(k, None)
 
 
+def parse_time_from_text(t: str) -> Optional[str]:
+    """Wyciąga godzinę w formacie HH:MM z dowolnego tekstu użytkownika (np. '14:30', '9.15', 'o 16', '9')."""
+    if not t:
+        return None
+    s = t.strip().lower()
+    # 1. Format HH:MM lub H:MM lub HH.MM lub H.MM
+    m1 = re.search(r'\b([01]?\d|2[0-3])[:.]([0-5]\d)\b', s)
+    if m1:
+        return f"{int(m1.group(1)):02d}:{int(m1.group(2)):02d}"
+    # 2. Format HH MM (np. 14 30)
+    m2 = re.search(r'\b([01]?\d|2[0-3])\s+([0-5]\d)\b', s)
+    if m2:
+        return f"{int(m2.group(1)):02d}:{int(m2.group(2)):02d}"
+    # 3. Sama godzina (np. 'o 14', '14', 'o 9', '9')
+    m3 = re.search(r'\b(?:o\s+)?([01]?\d|2[0-3])(?:\s*(?:rano|wieczorem|w południe|po południu))?\b', s)
+    if m3:
+        h = int(m3.group(1))
+        if 0 <= h <= 23:
+            return f"{h:02d}:00"
+    return None
+
+
+def find_next_event_needing_time(events: list[dict], start_idx: int = 0) -> Optional[int]:
+    """Zwraca indeks pierwszego wydarzenia bez ustalonej godziny (z pominięciem kategorii Śmieci)."""
+    for idx in range(start_idx, len(events)):
+        ev = events[idx]
+        cat = ev.get("category", "Wspólne")
+        if cat != "Śmieci" and not ev.get("event_time"):
+            return idx
+    return None
+
+
 def format_events_summary(events: list[dict]) -> str:
     cat_icons = {"Bartosz": "🧔", "Daria": "🌸", "Wspólne": "🏡", "Śmieci": "🗑️"}
     lines = []
@@ -1119,12 +1151,114 @@ async def answer_telegram_callback(callback_query_id: str, text: str = "") -> No
         logger.error("Błąd answerCallbackQuery: %s", exc)
 
 
+async def ask_time_decision_for_event(
+    chat_id: int | str,
+    token: str,
+    event_idx: int,
+    message_id: Optional[int] = None
+) -> None:
+    """Pyta użytkownika, czy dla danego wydarzenia ustalono godzinę (Tak / Nie)."""
+    pending = PENDING_CALENDAR_ACTIONS.get(token)
+    if not pending or event_idx >= len(pending.get("events", [])):
+        return
+
+    pending["current_time_idx"] = event_idx
+    pending["state"] = "awaiting_time_decision"
+    ev = pending["events"][event_idx]
+
+    title = ev.get("title", "Wydarzenie")
+    d = ev.get("event_date", "")
+    cat = ev.get("category", "Wspólne")
+    cat_icons = {"Bartosz": "🧔", "Daria": "🌸", "Wspólne": "🏡", "Śmieci": "🗑️"}
+    icon = cat_icons.get(cat, "📌")
+
+    msg = (
+        f"📋 <b>Dodawanie wydarzenia do kalendarza:</b>\n"
+        f"• {icon} <b>{title}</b>\n"
+        f"  📅 Data: <b>{d}</b> <i>[{cat}]</i>\n\n"
+        f"❓ <b>Czy ustalono już godzinę tego wydarzenia?</b>"
+    )
+    keyboard = [
+        [
+            {"text": "🕒 Tak, podaj godzinę", "callback_data": f"cal_time_yes:{token}"},
+            {"text": "❌ Nie, cały dzień", "callback_data": f"cal_time_no:{token}"}
+        ]
+    ]
+
+    if message_id:
+        await edit_telegram_message(
+            chat_id,
+            message_id,
+            msg,
+            remove_keyboard=False,
+            inline_keyboard=keyboard
+        )
+    else:
+        await send_telegram_with_keyboard(chat_id, msg, keyboard)
+
+
+async def ask_calendar_final_approval(
+    chat_id: int | str,
+    token: str,
+    message_id: Optional[int] = None
+) -> None:
+    """Prezentuje ostateczne podsumowanie wszystkich danych wydarzenia i prosi o potwierdzenie dodania."""
+    pending = PENDING_CALENDAR_ACTIONS.get(token)
+    if not pending:
+        return
+
+    pending["state"] = "pending_approval"
+    events = pending.get("events", [])
+    intro_msg = pending.get("intro_msg", "")
+    count = len(events)
+    summary = format_events_summary(events)
+
+    msg_lines = []
+    if intro_msg and intro_msg.strip() != "Zrobione!":
+        msg_lines.append(intro_msg.strip())
+        msg_lines.append("")
+
+    if count == 1:
+        msg_lines.append("📋 <b>Podsumowanie wydarzenia:</b>")
+    else:
+        msg_lines.append(f"📋 <b>Podsumowanie {count} wydarzeń:</b>")
+
+    msg_lines.append(summary)
+    msg_lines.append("")
+    msg_lines.append("❓ <b>Czy zatwierdzasz dodanie do kalendarza?</b>")
+    msg_lines.append("<i>(Kliknij przycisk poniżej lub odpisz 'tak' / 'nie')</i>")
+
+    full_text = "\n".join(msg_lines)
+    btn_ok = "✅ Zatwierdź i dodaj" if count == 1 else f"✅ Zatwierdź wszystkie ({count})"
+    keyboard = [
+        [
+            {"text": btn_ok, "callback_data": f"cal_ok:{token}"},
+            {"text": "❌ Odrzuć", "callback_data": f"cal_no:{token}"}
+        ]
+    ]
+
+    if message_id:
+        await edit_telegram_message(
+            chat_id,
+            message_id,
+            full_text,
+            remove_keyboard=False,
+            inline_keyboard=keyboard
+        )
+    else:
+        await send_telegram_with_keyboard(chat_id, full_text, keyboard)
+
+
 async def ask_calendar_confirmation(
     chat_id: int | str,
     sender: str,
     events: list[dict],
     intro_msg: str = ""
 ) -> None:
+    """Główny punkt wejścia przy wykryciu wydarzeń:
+    - Jeśli wydarzenie nie ma podanej godziny -> najpierw pyta 'Czy ustalono godzinę?'
+    - Jeśli ma już godzinę -> od razu pyta o ostateczne zatwierdzenie wszystkich danych.
+    """
     if not events:
         if intro_msg:
             await reply_telegram(chat_id, intro_msg)
@@ -1134,42 +1268,26 @@ async def ask_calendar_confirmation(
     token = uuid.uuid4().hex[:10]
     chat_id_str = str(chat_id)
 
-    PENDING_CALENDAR_ACTIONS[token] = {
+    pending_obj = {
         "sender": sender,
         "chat_id": chat_id_str,
         "created_at": time.time(),
-        "events": events
+        "events": events,
+        "intro_msg": intro_msg,
+        "current_time_idx": None,
+        "state": "pending_approval"
     }
+    PENDING_CALENDAR_ACTIONS[token] = pending_obj
     LAST_PENDING_PER_CHAT[chat_id_str] = token
 
-    summary = format_events_summary(events)
-    count = len(events)
+    # Sprawdź, czy któreś wydarzenie nie ma ustalonej godziny
+    idx_no_time = find_next_event_needing_time(events, 0)
+    if idx_no_time is not None:
+        await ask_time_decision_for_event(chat_id, token, idx_no_time)
+        return
 
-    msg_lines = []
-    if intro_msg and intro_msg.strip() != "Zrobione!":
-        msg_lines.append(intro_msg.strip())
-        msg_lines.append("")
-
-    if count == 1:
-        msg_lines.append("📋 <b>Wykryto wydarzenie do kalendarza:</b>")
-    else:
-        msg_lines.append(f"📋 <b>Wykryto {count} wydarzeń / terminów:</b>")
-
-    msg_lines.append(summary)
-    msg_lines.append("")
-    msg_lines.append("❓ <i>Czy zatwierdzasz dodanie do kalendarza?</i>")
-    msg_lines.append("<i>(Kliknij przycisk poniżej lub odpisz 'tak' / 'nie')</i>")
-
-    full_text = "\n".join(msg_lines)
-
-    btn_ok = "✅ Zatwierdź i dodaj" if count == 1 else f"✅ Zatwierdź wszystkie ({count})"
-    keyboard = [
-        [
-            {"text": btn_ok, "callback_data": f"cal_ok:{token}"},
-            {"text": "❌ Odrzuć", "callback_data": f"cal_no:{token}"}
-        ]
-    ]
-    await send_telegram_with_keyboard(chat_id, full_text, keyboard)
+    # Wszystkie wydarzenia mają już godzinę (lub to Śmieci) -> ostateczne potwierdzenie
+    await ask_calendar_final_approval(chat_id, token)
 
 
 async def handle_calendar_callback(
@@ -1179,6 +1297,56 @@ async def handle_calendar_callback(
     data: str,
     user_name: str
 ) -> None:
+    # 1. Użytkownik wybrał: TAK, ustalono godzinę
+    if data.startswith("cal_time_yes:"):
+        token = data.split(":", 1)[1]
+        pending = PENDING_CALENDAR_ACTIONS.get(token)
+        if not pending:
+            await answer_telegram_callback(callback_query_id, "Wpis wygasł lub został anulowany.")
+            return
+
+        pending["state"] = "awaiting_time_input"
+        idx = pending.get("current_time_idx", 0)
+        ev = pending["events"][idx]
+        title = ev.get("title", "Wydarzenie")
+        d = ev.get("event_date", "")
+
+        await answer_telegram_callback(callback_query_id, "Wprowadź godzinę")
+        prompt_text = (
+            f"🕒 <b>Podaj godzinę rozpoczęcia wydarzenia:</b>\n"
+            f"• <b>{title}</b> ({d})\n\n"
+            f"✍️ <i>Napisz godzinę w odpowiedzi (np. <b>14:30</b> lub <b>9:00</b>):</i>"
+        )
+        cancel_kb = [[{"text": "❌ Anuluj / Cały dzień", "callback_data": f"cal_time_no:{token}"}]]
+        if message_id:
+            await edit_telegram_message(chat_id, message_id, prompt_text, remove_keyboard=False, inline_keyboard=cancel_kb)
+        else:
+            await send_telegram_with_keyboard(chat_id, prompt_text, cancel_kb)
+        return
+
+    # 2. Użytkownik wybrał: NIE, wydarzenie na cały dzień
+    if data.startswith("cal_time_no:"):
+        token = data.split(":", 1)[1]
+        pending = PENDING_CALENDAR_ACTIONS.get(token)
+        if not pending:
+            await answer_telegram_callback(callback_query_id, "Wpis wygasł lub został anulowany.")
+            return
+
+        idx = pending.get("current_time_idx", 0)
+        if idx < len(pending["events"]):
+            pending["events"][idx]["event_time"] = ""
+
+        await answer_telegram_callback(callback_query_id, "Ustawiono: cały dzień")
+
+        # Sprawdź czy kolejne wydarzenie potrzebuje godziny
+        next_idx = find_next_event_needing_time(pending["events"], idx + 1)
+        if next_idx is not None:
+            await ask_time_decision_for_event(chat_id, token, next_idx, message_id=message_id)
+        else:
+            await ask_calendar_final_approval(chat_id, token, message_id=message_id)
+        return
+
+    # 3. Ostateczne zatwierdzenie dodania do kalendarza
     if data.startswith("cal_ok:"):
         token = data.split(":", 1)[1]
         pending = PENDING_CALENDAR_ACTIONS.pop(token, None)
@@ -1222,6 +1390,7 @@ async def handle_calendar_callback(
         else:
             await reply_telegram(chat_id, edit_text)
 
+    # 4. Odrzucenie / Anulowanie
     elif data.startswith("cal_no:"):
         token = data.split(":", 1)[1]
         PENDING_CALENDAR_ACTIONS.pop(token, None)
@@ -1739,41 +1908,111 @@ async def telegram_webhook(request: Request, update: dict):
 
     logger.info("Odebrano Telegram od %s (user %s, chat %s): text=%s, photo=%s, voice=%s", sender, user_id_str, chat_id, bool(text), bool(photo), bool(voice))
 
-    # Sprawdzenie czy użytkownik odpowiada tekstowo na oczekujące zatwierdzenie kalendarza
+    # Sprawdzenie czy użytkownik odpowiada na proces dodawania kalendarza (godzina / zatwierdzenie)
     clean_text = text.lower().strip()
     last_token = LAST_PENDING_PER_CHAT.get(chat_id_str)
     if last_token and last_token in PENDING_CALENDAR_ACTIONS:
-        if clean_text in ["tak", "zatwierdź", "zatwierdz", "dodaj", "ok", "jasne", "potwierdzam", "zapisz", "pewnie", "tak jest"]:
-            pending = PENDING_CALENDAR_ACTIONS.pop(last_token, None)
-            LAST_PENDING_PER_CHAT.pop(chat_id_str, None)
-            if pending:
-                events = pending.get("events", [])
-                async with httpx.AsyncClient(timeout=10.0) as client:
-                    for ev in events:
-                        await client.post(
-                            f"{SUPABASE_URL}/rest/v1/home_calendar",
-                            headers=supabase_headers(),
-                            json={
-                                "title": ev.get("title", "Wydarzenie"),
-                                "event_date": ev.get("event_date"),
-                                "event_time": ev.get("event_time", ""),
-                                "category": ev.get("category", "Wspólne"),
-                                "created_by": f"TG ({sender})"
-                            }
-                        )
-                await ws_manager.broadcast_refresh("calendar")
-                summary = format_events_summary(events)
-                await reply_telegram(
-                    chat_id,
-                    f"✅ <b>ZATWIERDZONO! Dodano do kalendarza ({sender}):</b>\n\n{summary}\n\n🔔 <i>Powiadomienia i przypomnienia Telegram zostały zaplanowane.</i>"
-                )
+        pending = PENDING_CALENDAR_ACTIONS[last_token]
+        st = pending.get("state", "pending_approval")
+
+        # KROK A: Użytkownik odpowiada na pytanie 'Czy ustalono godzinę wydarzenia?'
+        if st == "awaiting_time_decision":
+            if clean_text in ["nie", "brak", "cały dzień", "caly dzien", "nie ma", "nieustalona", "nie ustalono", "nie ma godziny"]:
+                idx = pending.get("current_time_idx", 0)
+                if idx < len(pending["events"]):
+                    pending["events"][idx]["event_time"] = ""
+                next_idx = find_next_event_needing_time(pending["events"], idx + 1)
+                if next_idx is not None:
+                    await ask_time_decision_for_event(chat_id, last_token, next_idx)
+                else:
+                    await ask_calendar_final_approval(chat_id, last_token)
                 return {"ok": True}
 
-        elif clean_text in ["nie", "anuluj", "odrzuć", "odrzuc", "skasuj", "nie dodawaj", "stop", "wstrzymaj"]:
-            PENDING_CALENDAR_ACTIONS.pop(last_token, None)
-            LAST_PENDING_PER_CHAT.pop(chat_id_str, None)
-            await reply_telegram(chat_id, f"❌ <b>Odrzucono dodawanie ({sender}).</b>\nŻadne wydarzenia nie zostały zapisane w kalendarzu.")
+            elif clean_text in ["tak", "ustalono", "jest", "podaj", "ustalona", "tak jest"]:
+                pending["state"] = "awaiting_time_input"
+                idx = pending.get("current_time_idx", 0)
+                ev = pending["events"][idx]
+                prompt_msg = (
+                    f"🕒 <b>Podaj godzinę rozpoczęcia wydarzenia:</b>\n"
+                    f"• <b>{ev.get('title')}</b> ({ev.get('event_date')})\n\n"
+                    f"✍️ <i>Napisz godzinę w odpowiedzi (np. <b>14:30</b> lub <b>9:00</b>):</i>"
+                )
+                cancel_kb = [[{"text": "❌ Anuluj / Cały dzień", "callback_data": f"cal_time_no:{last_token}"}]]
+                await send_telegram_with_keyboard(chat_id, prompt_msg, cancel_kb)
+                return {"ok": True}
+
+            # A jeśli użytkownik od razu wpisał godzinę (np. '14:30' lub 'o 16'):
+            parsed_t = parse_time_from_text(text)
+            if parsed_t:
+                idx = pending.get("current_time_idx", 0)
+                if idx < len(pending["events"]):
+                    pending["events"][idx]["event_time"] = parsed_t
+                next_idx = find_next_event_needing_time(pending["events"], idx + 1)
+                if next_idx is not None:
+                    await ask_time_decision_for_event(chat_id, last_token, next_idx)
+                else:
+                    await ask_calendar_final_approval(chat_id, last_token)
+                return {"ok": True}
+
+        # KROK B: Użytkownik wprowadza godzinę tekstem
+        elif st == "awaiting_time_input":
+            if clean_text in ["brak", "nie", "anuluj", "cały dzień", "caly dzien", "pomiń", "pomin"]:
+                idx = pending.get("current_time_idx", 0)
+                if idx < len(pending["events"]):
+                    pending["events"][idx]["event_time"] = ""
+            else:
+                parsed_t = parse_time_from_text(text)
+                if not parsed_t:
+                    await reply_telegram(
+                        chat_id,
+                        "⚠️ <i>Nie rozpoznałem godziny.</i>\n"
+                        "Napisz np. <b>14:30</b> lub <b>9:00</b> (albo napisz <i>brak</i>, jeśli wydarzenie ma być na cały dzień):"
+                    )
+                    return {"ok": True}
+                idx = pending.get("current_time_idx", 0)
+                if idx < len(pending["events"]):
+                    pending["events"][idx]["event_time"] = parsed_t
+
+            next_idx = find_next_event_needing_time(pending["events"], idx + 1)
+            if next_idx is not None:
+                await ask_time_decision_for_event(chat_id, last_token, next_idx)
+            else:
+                await ask_calendar_final_approval(chat_id, last_token)
             return {"ok": True}
+
+        # KROK C: Ostateczne zatwierdzenie wszystkich danych
+        elif st == "pending_approval":
+            if clean_text in ["tak", "zatwierdź", "zatwierdz", "dodaj", "ok", "jasne", "potwierdzam", "zapisz", "pewnie", "tak jest"]:
+                pending_act = PENDING_CALENDAR_ACTIONS.pop(last_token, None)
+                LAST_PENDING_PER_CHAT.pop(chat_id_str, None)
+                if pending_act:
+                    events = pending_act.get("events", [])
+                    async with httpx.AsyncClient(timeout=10.0) as client:
+                        for ev in events:
+                            await client.post(
+                                f"{SUPABASE_URL}/rest/v1/home_calendar",
+                                headers=supabase_headers(),
+                                json={
+                                    "title": ev.get("title", "Wydarzenie"),
+                                    "event_date": ev.get("event_date"),
+                                    "event_time": ev.get("event_time", ""),
+                                    "category": ev.get("category", "Wspólne"),
+                                    "created_by": f"TG ({sender})"
+                                }
+                            )
+                    await ws_manager.broadcast_refresh("calendar")
+                    summary = format_events_summary(events)
+                    await reply_telegram(
+                        chat_id,
+                        f"✅ <b>ZATWIERDZONO! Dodano do kalendarza ({sender}):</b>\n\n{summary}\n\n🔔 <i>Powiadomienia i przypomnienia Telegram zostały zaplanowane.</i>"
+                    )
+                    return {"ok": True}
+
+            elif clean_text in ["nie", "anuluj", "odrzuć", "odrzuc", "skasuj", "nie dodawaj", "stop", "wstrzymaj"]:
+                PENDING_CALENDAR_ACTIONS.pop(last_token, None)
+                LAST_PENDING_PER_CHAT.pop(chat_id_str, None)
+                await reply_telegram(chat_id, f"❌ <b>Odrzucono dodawanie ({sender}).</b>\nŻadne wydarzenia nie zostały zapisane w kalendarzu.")
+                return {"ok": True}
 
     # 1. Obsługa zdjęć (Multimodal - lodówka, paragon, harmonogram śmieci z kartki)
     if photo:
