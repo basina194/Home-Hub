@@ -1081,7 +1081,13 @@ async def send_telegram_with_keyboard(chat_id: int | str, text: str, inline_keyb
     return None
 
 
-async def edit_telegram_message(chat_id: int | str, message_id: int, text: str, remove_keyboard: bool = True) -> None:
+async def edit_telegram_message(
+    chat_id: int | str,
+    message_id: int,
+    text: str,
+    remove_keyboard: bool = True,
+    inline_keyboard: Optional[list] = None
+) -> None:
     if not TELEGRAM_BOT_TOKEN or not chat_id or not message_id:
         return
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/editMessageText"
@@ -1091,7 +1097,9 @@ async def edit_telegram_message(chat_id: int | str, message_id: int, text: str, 
         "text": text,
         "parse_mode": "HTML"
     }
-    if remove_keyboard:
+    if inline_keyboard is not None:
+        payload["reply_markup"] = {"inline_keyboard": inline_keyboard}
+    elif remove_keyboard:
         payload["reply_markup"] = {"inline_keyboard": []}
     try:
         client = get_http_client()
@@ -1227,6 +1235,146 @@ async def handle_calendar_callback(
             await edit_telegram_message(chat_id, message_id, edit_text)
         else:
             await reply_telegram(chat_id, edit_text)
+
+# --- INTERAKTYWNY TRYB SKLEPOWY TELEGRAM ---
+def build_shop_keyboard(items: list[dict]) -> tuple[str, list]:
+    """Buduje czytelną wiadomość i klawiaturę Inline dla trybu sklepowego.
+    Każda pozycja (nawet z ilością np. '2 sztuki') jest odznaczana jednym kliknięciem.
+    """
+    if not items:
+        return "🎉 <b>Lista zakupów jest pusta!</b>\nWszystko zostało już kupione. Dobra robota! ✨", []
+
+    text = (
+        f"🛒 <b>TRYB SKLEPOWY ({len(items)} do kupienia):</b>\n"
+        f"<i>Dotknij produktu, aby potwierdzić zakup (np. mleko 2 szt. skreśla się jednym kliknięciem):</i>"
+    )
+
+    keyboard = []
+    for it in items:
+        item_id = it.get("id")
+        name = it.get("item", "Produkt")
+        qty = str(it.get("quantity") or "1").strip()
+        qty_str = f" ({qty})" if qty and qty != "1" else ""
+        btn_title = f"🛒 {name}{qty_str}"
+        if len(btn_title) > 36:
+            btn_title = btn_title[:33] + "..."
+        keyboard.append([{"text": btn_title, "callback_data": f"shop_buy:{item_id}"}])
+
+    keyboard.append([
+        {"text": "🔄 Odśwież listę", "callback_data": "shop_refresh"},
+        {"text": "🏁 Zakończ zakupy", "callback_data": "shop_done"}
+    ])
+    return text, keyboard
+
+
+async def send_shop_mode(chat_id: int | str, user_name: str) -> None:
+    """Wysyła interaktywny widok trybu sklepowego na Telegramie."""
+    url = f"{SUPABASE_URL}/rest/v1/home_shopping?is_bought=eq.false&order=id.asc"
+    try:
+        client = get_http_client()
+        resp = await client.get(url, headers=supabase_headers())
+        items = resp.json() if resp.status_code == 200 else []
+        text, keyboard = build_shop_keyboard(items)
+        if keyboard:
+            await send_telegram_with_keyboard(chat_id, text, keyboard)
+        else:
+            await reply_telegram(chat_id, text)
+    except Exception as exc:
+        logger.error("Błąd podczas uruchamiania trybu sklepowego: %s", exc)
+        await reply_telegram(chat_id, "Wystąpił błąd podczas ładowania listy zakupów.")
+
+
+async def handle_shop_callback(
+    callback_query_id: str,
+    chat_id: int | str,
+    message_id: Optional[int],
+    data: str,
+    user_name: str
+) -> None:
+    """Obsługuje interakcje w trybie sklepowym (zakup, odświeżenie, zakończenie)."""
+    client = get_http_client()
+
+    if data == "shop_refresh":
+        url = f"{SUPABASE_URL}/rest/v1/home_shopping?is_bought=eq.false&order=id.asc"
+        resp = await client.get(url, headers=supabase_headers())
+        items = resp.json() if resp.status_code == 200 else []
+        text, keyboard = build_shop_keyboard(items)
+        await answer_telegram_callback(callback_query_id, "Zaktualizowano listę")
+        if message_id:
+            await edit_telegram_message(
+                chat_id,
+                message_id,
+                text,
+                remove_keyboard=(len(keyboard) == 0),
+                inline_keyboard=keyboard
+            )
+        return
+
+    if data == "shop_done":
+        await answer_telegram_callback(callback_query_id, "Zakończono zakupy!")
+        finish_text = (
+            f"🛒 <b>Zakupy zakończone przez {user_name}!</b>\n"
+            f"Lista została zsynchronizowana z aplikacją domową Home Hub. 👏"
+        )
+        if message_id:
+            await edit_telegram_message(chat_id, message_id, finish_text, remove_keyboard=True)
+        return
+
+    if data.startswith("shop_buy:"):
+        item_id_str = data.split(":", 1)[1]
+        try:
+            item_id = int(item_id_str)
+        except ValueError:
+            await answer_telegram_callback(callback_query_id, "Błąd identyfikatora produktu.")
+            return
+
+        # 1. Pobierz dane o produkcie przed oznaczeniem
+        get_url = f"{SUPABASE_URL}/rest/v1/home_shopping?id=eq.{item_id}&select=item,quantity,is_bought"
+        get_resp = await client.get(get_url, headers=supabase_headers())
+        bought_item_name = "Produkt"
+        if get_resp.status_code == 200 and get_resp.json():
+            item_data = get_resp.json()[0]
+            if item_data.get("is_bought"):
+                await answer_telegram_callback(callback_query_id, "Produkt został już wcześniej odhaczony!")
+                return
+            raw_name = item_data.get("item", "Produkt")
+            raw_qty = str(item_data.get("quantity") or "1").strip()
+            bought_item_name = f"{raw_name} ({raw_qty})" if raw_qty and raw_qty != "1" else raw_name
+
+        # 2. Oznacz produkt jako kupiony (jednorazowe potwierdzenie całej pozycji)
+        patch_url = f"{SUPABASE_URL}/rest/v1/home_shopping?id=eq.{item_id}"
+        await client.patch(patch_url, headers=supabase_headers(), json={"is_bought": True})
+
+        # 3. Odśwież natychmiast frontend PWA przez WebSocket (0ms opóźnienia u Darii i Bartosza)
+        await ws_manager.broadcast_refresh("shopping")
+
+        # 4. Wyświetl toast w Telegramie
+        await answer_telegram_callback(callback_query_id, f"✅ Kupiono: {bought_item_name}!")
+
+        # 5. Pobierz pozostałe niekupione pozycje i zaktualizuj wiadomość w Telegramie
+        url_rem = f"{SUPABASE_URL}/rest/v1/home_shopping?is_bought=eq.false&order=id.asc"
+        resp_rem = await client.get(url_rem, headers=supabase_headers())
+        remaining_items = resp_rem.json() if resp_rem.status_code == 200 else []
+
+        if not remaining_items:
+            final_text = (
+                f"🎉 <b>WSZYSTKIE ZAKUPY ZROBIONE!</b>\n"
+                f"Ostatnio kupiono: <b>{bought_item_name}</b> (przez: <b>{user_name}</b>).\n"
+                f"Koszyk jest pusty. Dobra robota! 👏"
+            )
+            if message_id:
+                await edit_telegram_message(chat_id, message_id, final_text, remove_keyboard=True)
+        else:
+            text, keyboard = build_shop_keyboard(remaining_items)
+            text += f"\n\n✅ <i>Ostatnio odhaczono: <b>{bought_item_name}</b> ({user_name})</i>"
+            if message_id:
+                await edit_telegram_message(
+                    chat_id,
+                    message_id,
+                    text,
+                    remove_keyboard=False,
+                    inline_keyboard=keyboard
+                )
 
 
 def select_models_for_task(user_prompt: str, media_parts: Optional[list] = None) -> list[str]:
@@ -1542,6 +1690,10 @@ async def telegram_webhook(request: Request, update: dict):
             await answer_telegram_callback(cq_id, "⛔ Brak dostępu. Bot jest prywatny.")
             return {"ok": True}
 
+        if data.startswith("shop_"):
+            await handle_shop_callback(cq_id, chat_id, message_id, data, user_name)
+            return {"ok": True}
+
         await handle_calendar_callback(cq_id, chat_id, message_id, data, user_name)
         return {"ok": True}
 
@@ -1676,21 +1828,14 @@ async def telegram_webhook(request: Request, update: dict):
         await reply_telegram(chat_id, help_msg)
         return {"ok": True}
 
-    # 4. Szybkie skróty podglądu (komendy natywne)
-    if text.lower() in ("/lista", "lista", "/zakupy", "zakupy"):
-        url = f"{SUPABASE_URL}/rest/v1/home_shopping?is_bought=eq.false&order=id.asc"
-        client = get_http_client()
-        resp = await client.get(url, headers=supabase_headers())
-        items = resp.json() if resp.status_code == 200 else []
-
-        if not items:
-            await reply_telegram(chat_id, "🎉 <b>Lista zakupów jest pusta!</b> Wszystko kupione.")
-        else:
-            lines = ["🛒 <b>Aktualna lista zakupów:</b>"]
-            for idx, item in enumerate(items, 1):
-                qty_str = f" <i>({item.get('quantity')})</i>" if item.get("quantity") and item.get("quantity") != "1" else ""
-                lines.append(f"{idx}. {item.get('item')}{qty_str}")
-            await reply_telegram(chat_id, "\n".join(lines))
+    # 4. Szybkie skróty podglądu i interaktywny TRYB SKLEPOWY
+    SHOP_TRIGGERS = (
+        "/sklep", "sklep", "/zakupy", "zakupy", "/lista", "lista",
+        "tryb sklepowy", "idę do sklepu", "ide do sklepu", "jestem w sklepie",
+        "co kupić", "co kupic", "co mamy kupić", "co mamy kupic", "pokaż zakupy", "pokaz zakupy"
+    )
+    if text.lower().strip() in SHOP_TRIGGERS:
+        await send_shop_mode(chat_id, sender)
         return {"ok": True}
 
     if text.lower() in ("/kalendarz", "kalendarz", "/terminy", "terminy", "/wydarzenia", "wydarzenia"):
