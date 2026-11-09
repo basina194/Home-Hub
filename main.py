@@ -974,18 +974,109 @@ POLISH_CALENDAR_MONTHS = {
     'listopad': 11, 'grudzi': 12
 }
 
+WEEKDAYS_PL = [
+    ('poniedział', 0), ('poniedzial', 0),
+    ('wtork', 1), ('wtorek', 1),
+    ('środ', 2), ('srod', 2),
+    ('czwart', 3),
+    ('piąt', 4), ('piat', 4),
+    ('sobot', 5),
+    ('niedziel', 6)
+]
+
+
+def extract_time_from_calendar_text(text: str) -> tuple[str, str]:
+    """Wyszukuje godzinę w tekście i usuwa jej oznaczenie z tekstu.
+    Zwraca: (oczyszczony_tekst, 'HH:MM' lub '')
+    Obsługuje:
+    - 'o godz. 10.00', 'godz 10.00', 'o godzinie 14:30', 'godzina 9'
+    - 'o 10.00', 'o 10:00', 'o 16', 'o 9 rano', '18:00'
+    - '10.00', '15.30'
+    """
+    s = text
+
+    # 1. 'o godz(ina/inie)? HH:MM lub HH.MM' lub 'godz(ina/inie)? HH:MM/HH.MM'
+    m1 = re.search(
+        r'\b(?:o\s+)?(?:godz(?:ina|inie|\.)?)\s*([01]?\d|2[0-3])[:.]([0-5]\d)\b',
+        s,
+        flags=re.IGNORECASE
+    )
+    if m1:
+        time_str = f"{int(m1.group(1)):02d}:{int(m1.group(2)):02d}"
+        s = s[:m1.start()] + " " + s[m1.end():]
+        return re.sub(r'\s+', ' ', s).strip(), time_str
+
+    # 2. 'o HH:MM' lub 'o HH.MM' (np. 'o 10.00', 'o 14:30')
+    m2 = re.search(
+        r'\b(?:o|na)\s+([01]?\d|2[0-3])[:.]([0-5]\d)\b',
+        s,
+        flags=re.IGNORECASE
+    )
+    if m2:
+        time_str = f"{int(m2.group(1)):02d}:{int(m2.group(2)):02d}"
+        s = s[:m2.start()] + " " + s[m2.end():]
+        return re.sub(r'\s+', ' ', s).strip(), time_str
+
+    # 3. Godzina z dwukropkiem HH:MM (np. '10:00')
+    m3 = re.search(
+        r'\b([01]?\d|2[0-3]):([0-5]\d)\b',
+        s
+    )
+    if m3:
+        time_str = f"{int(m3.group(1)):02d}:{int(m3.group(2)):02d}"
+        s = s[:m3.start()] + " " + s[m3.end():]
+        return re.sub(r'\s+', ' ', s).strip(), time_str
+
+    # 4. 'o godz(ina/inie)? HH' lub 'godz(ina/inie)? HH' (np. 'godz 10', 'godzina 9')
+    m4 = re.search(
+        r'\b(?:o\s+)?(?:godz(?:ina|inie|\.)?)\s*([01]?\d|2[0-3])\b',
+        s,
+        flags=re.IGNORECASE
+    )
+    if m4:
+        h = int(m4.group(1))
+        time_str = f"{h:02d}:00"
+        s = s[:m4.start()] + " " + s[m4.end():]
+        return re.sub(r'\s+', ' ', s).strip(), time_str
+
+    # 5. 'o HH' lub 'na HH' z ewentualnym określeniem pory (np. 'o 16', 'o 9 rano', 'o 6 wieczorem')
+    m5 = re.search(
+        r'\b(?:o|na)\s+([01]?\d|2[0-3])(?:\s*(rano|wieczorem|w\s+południe|po\s+południu))?\b',
+        s,
+        flags=re.IGNORECASE
+    )
+    if m5:
+        h = int(m5.group(1))
+        mod = (m5.group(2) or "").lower()
+        if ("południu" in mod or "wieczorem" in mod) and 1 <= h <= 11:
+            h += 12
+        time_str = f"{h:02d}:00"
+        s = s[:m5.start()] + " " + s[m5.end():]
+        return re.sub(r'\s+', ' ', s).strip(), time_str
+
+    # 6. Samo HH.MM (z kropką, np. '10.00' lub '15.30'), ale nie data!
+    m6 = re.search(
+        r'(?<![.\d])([01]?\d|2[0-3])\.([0-5]\d)(?![.\d])',
+        s
+    )
+    if m6:
+        time_str = f"{int(m6.group(1)):02d}:{int(m6.group(2)):02d}"
+        s = s[:m6.start()] + " " + s[m6.end():]
+        return re.sub(r'\s+', ' ', s).strip(), time_str
+
+    return s.strip(), ""
+
 
 def parse_calendar_input(text: str, default_user: str = "Bartosz") -> tuple[str, str, str, str]:
     """Inteligentne rozpoznawanie daty, godziny, tytułu i kategorii:
-    - 'kalendarz 15.11 dentysta 16:30' -> ('Dentysta', '2026-11-15', '16:30', 'Bartosz')
-    - 'Dodaj kalednarz wspolny szpital miejski 9 listopad usg' -> ('Szpital miejski usg', '2026-11-09', '', 'Wspólne')
-    - 'śmieci jutro bio' -> ('Bio', '2026-11-03', '', 'Śmieci')
-    - 'termin 20.11 wyjazd z rodzicami Daria' -> ('Wyjazd z rodzicami', '2026-11-20', '', 'Daria')
+    - 'kalendarz 12 stycznia godz 10.00 neonatolog szpital miejski' -> ('Neonatolog szpital miejski', '2027-01-12', '10:00', 'Bartosz')
+    - '15.11 dentysta 16:30' -> ('Dentysta', '2026-11-15', '16:30', 'Bartosz')
+    - 'śmieci jutro bio' -> ('Bio', '2026-11-10', '', 'Śmieci')
     """
     now = datetime.date.today()
     cleaned = text.strip()
-    
-    # Obsługa prefixów (w tym z literówkami i 'dodaj')
+
+    # 1. Obsługa prefixów (w tym z literówkami i 'dodaj')
     for prefix in [
         "dodaj do kalendarza", "dodaj kalendarz", "dodaj kalednarz", "dodaj termin", "dodaj do terminu",
         "dodaj wydarzenie", "dodaj wizytę", "dodaj wizyte", "dodaj spotkanie", "dodaj śmieci", "dodaj smieci",
@@ -995,6 +1086,7 @@ def parse_calendar_input(text: str, default_user: str = "Bartosz") -> tuple[str,
     ]:
         if cleaned.lower().startswith(prefix):
             cleaned = cleaned[len(prefix):].strip()
+            cleaned = re.sub(r'^[:\-,\s]+', '', cleaned).strip()
             break
 
     lower = cleaned.lower()
@@ -1013,50 +1105,111 @@ def parse_calendar_input(text: str, default_user: str = "Bartosz") -> tuple[str,
     event_date = str(now)
     time_str = ""
 
-    # Szukaj godziny HH:MM
-    m_time = re.search(r'\b([01]?\d|2[0-3]):([0-5]\d)\b', cleaned)
-    if m_time:
-        time_str = m_time.group(0)
-        cleaned = cleaned.replace(time_str, "").strip()
+    # 2. Wstępne wyciągnięcie jawnej godziny (godz., dwukropek, o HH.MM)
+    m_godz = re.search(r'\b(?:o\s+)?godz(?:ina|inie|\.)?\s*([01]?\d|2[0-3])(?:[:.]([0-5]\d))?\b', cleaned, flags=re.I)
+    if m_godz:
+        h = int(m_godz.group(1))
+        m = int(m_godz.group(2)) if m_godz.group(2) is not None else 0
+        time_str = f"{h:02d}:{m:02d}"
+        cleaned = cleaned[:m_godz.start()] + " " + cleaned[m_godz.end():]
+        cleaned = re.sub(r'\s+', ' ', cleaned).strip()
 
-    # Szukaj daty słownej lub numerycznej
+    if not time_str:
+        m_colon = re.search(r'\b(?:o\s+)?([01]?\d|2[0-3]):([0-5]\d)\b', cleaned, flags=re.I)
+        if m_colon:
+            time_str = f"{int(m_colon.group(1)):02d}:{int(m_colon.group(2)):02d}"
+            cleaned = cleaned[:m_colon.start()] + " " + cleaned[m_colon.end():]
+            cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+
+    if not time_str:
+        m_at_dot = re.search(r'\b(?:o|na)\s+([01]?\d|2[0-3])\.([0-5]\d)\b', cleaned, flags=re.I)
+        if m_at_dot:
+            time_str = f"{int(m_at_dot.group(1)):02d}:{int(m_at_dot.group(2)):02d}"
+            cleaned = cleaned[:m_at_dot.start()] + " " + cleaned[m_at_dot.end():]
+            cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+
+    # 3. Szukaj daty: pojutrze, jutro, dziś, miesiące słownie, dni tygodnia, format numeryczny
+    lower = cleaned.lower()
+    found_date = False
+
     if "pojutrze" in lower:
         event_date = str(now + datetime.timedelta(days=2))
         cleaned = re.sub(r'\bpojutrze\b', '', cleaned, flags=re.I).strip()
+        found_date = True
     elif "jutro" in lower:
         event_date = str(now + datetime.timedelta(days=1))
         cleaned = re.sub(r'\bjutro\b', '', cleaned, flags=re.I).strip()
+        found_date = True
     elif "dzisiaj" in lower or "dziś" in lower:
         event_date = str(now)
         cleaned = re.sub(r'\b(dzisiaj|dziś)\b', '', cleaned, flags=re.I).strip()
-    else:
-        # Sprawdź polskie miesiące słownie, np. '9 listopad' lub '9 listopada'
+        found_date = True
+
+    if not found_date:
+        # Polskie miesiące słownie, np. '12 stycznia', '9 listopad'
         m_month = re.search(r'\b(\d{1,2})\s+([a-zA-ZąćęłńóśźżĄĆĘŁŃÓŚŹŻ]+)(?:\s+(\d{4}))?\b', cleaned)
-        found_month = False
         if m_month:
             d_val = int(m_month.group(1))
             m_word = m_month.group(2).lower()
             for prefix_m, m_num in POLISH_CALENDAR_MONTHS.items():
                 if m_word.startswith(prefix_m):
                     y_val = int(m_month.group(3)) if m_month.group(3) else now.year
+                    # Jeśli nie podano roku, a data minęła w bieżącym roku -> kolejny rok
+                    if not m_month.group(3):
+                        if m_num < now.month or (m_num == now.month and d_val < now.day):
+                            y_val = now.year + 1
                     event_date = f"{y_val:04d}-{m_num:02d}-{d_val:02d}"
-                    cleaned = cleaned.replace(m_month.group(0), "").strip()
-                    found_month = True
+                    cleaned = cleaned[:m_month.start()] + " " + cleaned[m_month.end():]
+                    cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+                    found_date = True
                     break
-        if not found_month:
-            m_date = re.search(r'\b(\d{1,2})[./-](\d{1,2})(?:[./-](\d{4}))?\b', cleaned)
-            if m_date:
-                day = int(m_date.group(1))
-                month = int(m_date.group(2))
-                year = int(m_date.group(3)) if m_date.group(3) else now.year
-                event_date = f"{year:04d}-{month:02d}-{day:02d}"
-                cleaned = cleaned.replace(m_date.group(0), "").strip()
 
-    # Usunięcie zbędnych słów kluczowych z tytułu
+    if not found_date:
+        # Dni tygodnia (np. 'we wtorek', 'w piątek', 'sobota')
+        m_wday = re.search(r'\b(?:w|we)?\s*(poniedzia[łl][a-z]*|wtork?[a-z]*|wtorek|\bśrod[a-z]*|\bsrod[a-z]*|czwart[a-z]*|pi[ąa]t[a-z]*|sobot[a-z]*|niedziel[a-z]*)\b', cleaned, flags=re.I)
+        if m_wday:
+            w_word = m_wday.group(1).lower()
+            target_w = None
+            for pfx, w_num in WEEKDAYS_PL:
+                if w_word.startswith(pfx):
+                    target_w = w_num
+                    break
+            if target_w is not None:
+                days_ahead = (target_w - now.weekday()) % 7
+                if days_ahead == 0:
+                    days_ahead = 7
+                event_date = str(now + datetime.timedelta(days=days_ahead))
+                cleaned = cleaned[:m_wday.start()] + " " + cleaned[m_wday.end():]
+                cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+                found_date = True
+
+    if not found_date:
+        # Format numeryczny DD.MM lub DD.MM.YYYY
+        m_date = re.search(r'\b(\d{1,2})[./-](\d{1,2})(?:[./-](\d{4}))?\b', cleaned)
+        if m_date:
+            day = int(m_date.group(1))
+            month = int(m_date.group(2))
+            year = int(m_date.group(3)) if m_date.group(3) else now.year
+            if not m_date.group(3):
+                if month < now.month or (month == now.month and day < now.day):
+                    year = now.year + 1
+            event_date = f"{year:04d}-{month:02d}-{day:02d}"
+            cleaned = cleaned[:m_date.start()] + " " + cleaned[m_date.end():]
+            cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+            found_date = True
+
+    # 4. Jeśli data została już wycięta, a nadal nie ma godziny:
+    # wywołujemy extract_time_from_calendar_text na pozostałym tekście
+    if not time_str:
+        cleaned, time_str = extract_time_from_calendar_text(cleaned)
+
+    # 5. Oczyszczenie tytułu ze zbędnych słów kluczowych i łączników
     cleaned = re.sub(r'\b(daria|darii|bartosz|bartosza|bartek|bartka|wspólne|wspolne|wspólny|wspolny)\b', '', cleaned, flags=re.I).strip()
-    cleaned = re.sub(r'^(o|w|na|ze|z|dla|do)\s+', '', cleaned, flags=re.I).strip()
+    cleaned = re.sub(r'^(o|w|we|na|ze|z|dla|do)\s+', '', cleaned, flags=re.I).strip()
     cleaned = re.sub(r'\s+', ' ', cleaned).strip()
-    return cleaned.capitalize() or "Wydarzenie", event_date, time_str, cat
+    title = (cleaned[0].upper() + cleaned[1:]) if cleaned else "Wydarzenie"
+
+    return title, event_date, time_str, cat
 
 
 async def reply_telegram(chat_id: int | str, text: str) -> None:
@@ -1338,7 +1491,17 @@ async def ask_calendar_confirmation(
     PENDING_CALENDAR_ACTIONS[token] = pending_obj
     LAST_PENDING_PER_CHAT[chat_id_str] = token
 
-    # Sprawdź, czy któreś wydarzenie nie ma ustalonej godziny
+    # Sprawdź, czy któreś wydarzenie nie ma ustalonej godziny, ale ma ją w tytule
+    for ev in events:
+        if not ev.get("event_time") and ev.get("category") != "Śmieci":
+            clean_t, det_time = extract_time_from_calendar_text(ev.get("title", ""))
+            if det_time:
+                ev["event_time"] = det_time
+                if clean_t:
+                    clean_t = re.sub(r'^(o|w|we|na|ze|z|dla|do)\s+', '', clean_t, flags=re.I).strip()
+                    ev["title"] = (clean_t[0].upper() + clean_t[1:]) if len(clean_t) > 1 else clean_t.upper()
+
+    # Sprawdź, czy któreś wydarzenie nadal nie ma ustalonej godziny
     idx_no_time = find_next_event_needing_time(events, 0)
     if idx_no_time is not None:
         await ask_time_decision_for_event(chat_id, token, idx_no_time)
@@ -1698,7 +1861,7 @@ Nadchodzący kalendarz: {calendar_text}.
 Instrukcje:
 1. Zakupy -> 'add_shopping' (nazwy, ilości). Nigdy nie wstawiaj do nazwy produktu prefiksów takich jak 'dodaj do zakupów', 'kup', 'na listę'.
 2. Kupione rzeczy ('kupiłem', 'skreśl') -> 'complete_shopping'.
-3. Terminy/wydarzenia/śmieci (tekst/foto/głos) -> 'add_calendar' ('calendar_event' lub 'calendar_events', kategoria: Bartosz/Daria/Wspólne/Śmieci).
+3. Terminy/wydarzenia/śmieci (tekst/foto/głos) -> 'add_calendar' ('calendar_event' lub 'calendar_events', kategoria: Bartosz/Daria/Wspólne/Śmieci). ZAWSZE jeśli w treści podano godzinę (np. '10.00', '10:00', 'godz 10', 'o 14'), wpisz ją do 'event_time' (HH:MM) i usuń ją z 'title'.
 4. W polu 'reply' napisz zwięzłą, naturalną odpowiedź (1-2 zdania, emoji)."""
 
     generation_config = {
